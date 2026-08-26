@@ -93,7 +93,7 @@ export default function Dashboard() {
         )}
         <div className="mt-3 flex items-center justify-between border-t border-pink-50 pt-3">
           <span className="text-sm font-semibold text-stone-400">Today</span>
-          <span className="text-lg font-bold text-stone-800">{formatCurrency(todaySpent)}</span>
+          <span className="text-lg font-bold text-pink-500">{formatCurrency(todaySpent)}</span>
         </div>
       </section>
 

@@ -20,3 +20,11 @@ body {
 h1, h2, h3, .font-heading {
   font-family: var(--font-heading);
 }
+
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
