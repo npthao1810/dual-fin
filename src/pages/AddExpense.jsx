@@ -16,6 +16,29 @@ const FOR_OPTIONS = [
   { value: 'us', label: 'Us', icon: '/icons/nav/us.png' },
 ]
 
+const DRAFT_KEY = 'dualfin.addExpenseDraft'
+
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function saveDraft(draft) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+  } catch {
+    // ignore storage errors (e.g. private browsing quota)
+  }
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY)
+}
+
 export default function AddExpense() {
   const { household, categories } = useHousehold()
   const { user } = useAuth()
@@ -26,20 +49,22 @@ export default function AddExpense() {
   const [searchParams] = useSearchParams()
   const presetTripId = searchParams.get('trip') ?? ''
 
-  const [amount, setAmount] = useState('')
-  const [name, setName] = useState('')
-  const [categoryId, setCategoryId] = useState('')
-  const [forWhom, setForWhom] = useState('us')
-  const [emChi, setEmChi] = useState(false)
-  const [tripId, setTripId] = useState(presetTripId)
-  const [date, setDate] = useState(toISODate(new Date()))
+  const draft = isEditing ? null : loadDraft()
+
+  const [amount, setAmount] = useState(() => draft?.amount ?? '')
+  const [name, setName] = useState(() => draft?.name ?? '')
+  const [categoryId, setCategoryId] = useState(() => draft?.categoryId ?? '')
+  const [forWhom, setForWhom] = useState(() => draft?.forWhom ?? 'us')
+  const [emChi, setEmChi] = useState(() => draft?.emChi ?? false)
+  const [tripId, setTripId] = useState(() => draft?.tripId ?? presetTripId)
+  const [date, setDate] = useState(() => draft?.date ?? toISODate(new Date()))
   const [trips, setTrips] = useState([])
   const [recentCategoryIds, setRecentCategoryIds] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState(null)
-  const didSetDefaultCategory = useRef(isEditing)
+  const didSetDefaultCategory = useRef(isEditing || Boolean(draft))
 
   useEffect(() => {
     if (!isEditing) return
@@ -90,6 +115,15 @@ export default function AddExpense() {
     const food = categories.find((c) => c.name.trim().toLowerCase() === 'food')
     if (food) setCategoryId(food.id)
   }, [categories])
+
+  useEffect(() => {
+    if (isEditing) return
+    if (amount !== '' || name.trim() !== '') {
+      saveDraft({ amount, name, categoryId, forWhom, emChi, tripId, date })
+    } else {
+      clearDraft()
+    }
+  }, [isEditing, amount, name, categoryId, forWhom, emChi, tripId, date])
 
   const orderedCategories = useMemo(() => {
     const recent = recentCategoryIds
@@ -160,6 +194,7 @@ export default function AddExpense() {
 
     if (!isOnline) {
       enqueueExpense({ ...newExpense, queuedAt: new Date().toISOString() })
+      clearDraft()
       setSubmitting(false)
       navigate(tripId ? `/trips/${tripId}` : '/')
       return
@@ -170,6 +205,7 @@ export default function AddExpense() {
       ;({ error } = await supabase.from('expenses').insert(newExpense))
     } catch {
       enqueueExpense({ ...newExpense, queuedAt: new Date().toISOString() })
+      clearDraft()
       setSubmitting(false)
       navigate(tripId ? `/trips/${tripId}` : '/')
       return
@@ -180,6 +216,7 @@ export default function AddExpense() {
       setError(error.message)
       return
     }
+    clearDraft()
     navigate(tripId ? `/trips/${tripId}` : '/')
   }
 
