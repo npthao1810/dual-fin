@@ -15,12 +15,13 @@ export default function Settings() {
   const { user, signOut } = useAuth()
   const { household, categories, refresh } = useHousehold()
   const month = firstOfMonth()
-  const { budgets, upsertBudget } = useBudgets(month)
+  const { budgets, upsertBudget, deleteBudget } = useBudgets(month)
 
   const [newCategory, setNewCategory] = useState('')
   const [newIcon, setNewIcon] = useState('')
   const [savingCategory, setSavingCategory] = useState(false)
   const [budgetDrafts, setBudgetDrafts] = useState({})
+  const [budgetsExpanded, setBudgetsExpanded] = useState(false)
   const [dailyIncomeDraft, setDailyIncomeDraft] = useState(null)
   const [budgetStartDraft, setBudgetStartDraft] = useState(null)
 
@@ -49,6 +50,14 @@ export default function Settings() {
     refresh()
   }
 
+  async function handleRenameCategory(categoryId, newName) {
+    const trimmed = newName.trim()
+    const current = categories.find((c) => c.id === categoryId)
+    if (!trimmed || !current || trimmed === current.name) return
+    await supabase.from('categories').update({ name: trimmed }).eq('id', categoryId)
+    refresh()
+  }
+
   function budgetValueFor(categoryId) {
     if (budgetDrafts[categoryId] !== undefined) return budgetDrafts[categoryId]
     const existing = budgets.find((b) => b.category_id === categoryId)
@@ -57,8 +66,17 @@ export default function Settings() {
 
   async function handleBudgetBlur(categoryId) {
     const value = budgetDrafts[categoryId]
-    if (value === undefined || value === '') return
-    await upsertBudget(categoryId, Number(value))
+    if (value === undefined) return
+    if (value === '') {
+      await deleteBudget(categoryId)
+    } else {
+      await upsertBudget(categoryId, Number(value))
+    }
+    setBudgetDrafts((prev) => {
+      const next = { ...prev }
+      delete next[categoryId]
+      return next
+    })
   }
 
   const dailyIncomeValue =
@@ -118,9 +136,14 @@ export default function Settings() {
               key={c.id}
               className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
             >
-              <span className="flex items-center gap-2 font-semibold text-stone-700">
+              <span className="flex flex-1 items-center gap-2 font-semibold text-stone-700">
                 <span>{categoryIcon(c)}</span>
-                {c.name}
+                <input
+                  type="text"
+                  defaultValue={c.name}
+                  onBlur={(e) => handleRenameCategory(c.id, e.target.value)}
+                  className="min-w-0 flex-1 border-none bg-transparent p-0 font-semibold text-stone-700 outline-none focus:underline"
+                />
               </span>
               <button
                 type="button"
@@ -138,10 +161,18 @@ export default function Settings() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-sm font-semibold text-stone-500">
-          Monthly budgets — {new Date(month).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-        </h2>
-        <ul className="space-y-2">
+        <button
+          type="button"
+          onClick={() => setBudgetsExpanded((v) => !v)}
+          className="flex w-full items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
+        >
+          <span className="text-sm font-semibold text-stone-500">
+            Monthly budgets — {new Date(month).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+          </span>
+          <span className="text-stone-400">{budgetsExpanded ? '▾' : '▸'}</span>
+        </button>
+        {budgetsExpanded && (
+        <ul className="mt-2 space-y-2">
           {categories.map((c) => (
             <li
               key={c.id}
@@ -167,6 +198,7 @@ export default function Settings() {
             </li>
           ))}
         </ul>
+        )}
       </section>
 
       <section className="mb-6">

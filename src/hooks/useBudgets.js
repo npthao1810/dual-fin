@@ -40,5 +40,17 @@ export function useBudgets(month) {
     return error
   }
 
-  return { budgets, loading, refresh: fetchBudgets, upsertBudget }
+  async function deleteBudget(categoryId) {
+    if (!household) return
+    const { error } = await supabase
+      .from('budgets')
+      .delete()
+      .eq('household_id', household.id)
+      .eq('category_id', categoryId)
+      .eq('month', month)
+    if (!error) await fetchBudgets()
+    return error
+  }
+
+  return { budgets, loading, refresh: fetchBudgets, upsertBudget, deleteBudget }
 }

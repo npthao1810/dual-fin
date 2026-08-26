@@ -23,6 +23,9 @@ export default function Dashboard() {
   const monthlyExpenses = expenses.filter((e) => !e.trip_id)
   const pendingCount = monthlyExpenses.filter((e) => e.pending).length
   const totalSpent = monthlyExpenses.reduce((sum, e) => sum + Number(e.amount), 0)
+  const todaySpent = monthlyExpenses
+    .filter((e) => e.date === today)
+    .reduce((sum, e) => sum + Number(e.amount), 0)
 
   const dailyIncome = household?.daily_income != null ? Number(household.daily_income) : null
   const daysElapsed = budgetStartDate ? daysBetweenInclusive(budgetStartDate, today) : null
@@ -88,6 +91,10 @@ export default function Dashboard() {
             </span>
           </div>
         )}
+        <div className="mt-3 flex items-center justify-between border-t border-pink-50 pt-3">
+          <span className="text-sm font-semibold text-stone-400">Today</span>
+          <span className="text-lg font-bold text-stone-800">{formatCurrency(todaySpent)}</span>
+        </div>
       </section>
 
       <Link
