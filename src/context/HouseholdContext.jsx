@@ -44,15 +44,12 @@ export function HouseholdProvider({ children }) {
     fetchHousehold()
   }, [fetchHousehold])
 
-  const isYou = useCallback((paidById) => paidById === user?.id, [user])
-
   const value = {
     household,
     categories,
     loading,
     error,
     refresh: fetchHousehold,
-    isYou,
   }
 
   return <HouseholdContext.Provider value={value}>{children}</HouseholdContext.Provider>

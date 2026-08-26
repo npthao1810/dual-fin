@@ -1,28 +1,64 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout'
 import NumberPad from '../components/NumberPad'
 import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { useAuth } from '../context/AuthContext'
 import { toISODate } from '../lib/format'
+import { categoryIcon } from '../lib/categoryIcons'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
+import { enqueueExpense } from '../lib/offlineQueue'
+
+const FOR_OPTIONS = [
+  { value: 'anh', label: 'Anh', icon: '/icons/nav/anh.png' },
+  { value: 'em', label: 'Em', icon: '/icons/nav/em.png' },
+  { value: 'us', label: 'Us', icon: '/icons/nav/us.png' },
+]
 
 export default function AddExpense() {
   const { household, categories } = useHousehold()
   const { user } = useAuth()
+  const isOnline = useOnlineStatus()
   const navigate = useNavigate()
+  const { id } = useParams()
+  const isEditing = Boolean(id)
   const [searchParams] = useSearchParams()
   const presetTripId = searchParams.get('trip') ?? ''
 
   const [amount, setAmount] = useState('')
+  const [name, setName] = useState('')
   const [categoryId, setCategoryId] = useState('')
+  const [forWhom, setForWhom] = useState('us')
+  const [emChi, setEmChi] = useState(false)
   const [tripId, setTripId] = useState(presetTripId)
-  const [note, setNote] = useState('')
   const [date, setDate] = useState(toISODate(new Date()))
   const [trips, setTrips] = useState([])
   const [recentCategoryIds, setRecentCategoryIds] = useState([])
   const [submitting, setSubmitting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState(null)
+  const didSetDefaultCategory = useRef(isEditing)
+
+  useEffect(() => {
+    if (!isEditing) return
+    supabase
+      .from('expenses')
+      .select('*')
+      .eq('id', id)
+      .single()
+      .then(({ data }) => {
+        if (!data) return
+        setAmount(String(data.amount))
+        setName(data.note ?? '')
+        setCategoryId(data.category_id ?? '')
+        setForWhom(data.for_whom ?? 'us')
+        setEmChi(data.em_chi ?? false)
+        setTripId(data.trip_id ?? '')
+        setDate(data.date)
+      })
+  }, [id, isEditing])
 
   useEffect(() => {
     if (!household) return
@@ -48,6 +84,13 @@ export default function AddExpense() {
       })
   }, [household])
 
+  useEffect(() => {
+    if (didSetDefaultCategory.current || categories.length === 0) return
+    didSetDefaultCategory.current = true
+    const food = categories.find((c) => c.name.trim().toLowerCase() === 'food')
+    if (food) setCategoryId(food.id)
+  }, [categories])
+
   const orderedCategories = useMemo(() => {
     const recent = recentCategoryIds
       .map((id) => categories.find((c) => c.id === id))
@@ -61,8 +104,20 @@ export default function AddExpense() {
       setAmount((prev) => prev.slice(0, -1))
       return
     }
-    if (key === '.' && amount.includes('.')) return
-    setAmount((prev) => (prev + key).slice(0, 10))
+    setAmount((prev) => (prev === '0' ? key : (prev + key).slice(0, 12)))
+  }
+
+  const displayAmount = amount ? Number(amount).toLocaleString('vi-VN') : '0'
+
+  const { today, yesterday } = useMemo(() => {
+    const now = new Date()
+    return { today: toISODate(now), yesterday: toISODate(new Date(now.getTime() - 24 * 60 * 60 * 1000)) }
+  }, [])
+  const dateBadge = date === today ? 'Today' : date === yesterday ? 'Yesterday' : null
+
+  function shiftDate(days) {
+    const [y, m, d] = date.split('-').map(Number)
+    setDate(toISODate(new Date(y, m - 1, d + days)))
   }
 
   async function handleSubmit() {
@@ -71,19 +126,54 @@ export default function AddExpense() {
       setError('Enter an amount')
       return
     }
+    if (!name.trim()) {
+      setError('Enter a name for the expense')
+      return
+    }
     if (!household) return
 
     setSubmitting(true)
     setError(null)
-    const { error } = await supabase.from('expenses').insert({
+    const payload = {
       household_id: household.id,
       category_id: categoryId || null,
       trip_id: tripId || null,
       amount: numericAmount,
-      note: note || null,
-      paid_by: user.id,
+      note: name.trim(),
+      for_whom: forWhom,
+      em_chi: emChi,
       date,
-    })
+    }
+
+    if (isEditing) {
+      const { error } = await supabase.from('expenses').update(payload).eq('id', id)
+      setSubmitting(false)
+      if (error) {
+        setError(error.message)
+        return
+      }
+      navigate(tripId ? `/trips/${tripId}` : '/history')
+      return
+    }
+
+    const newExpense = { id: crypto.randomUUID(), ...payload, paid_by: user.id }
+
+    if (!isOnline) {
+      enqueueExpense({ ...newExpense, queuedAt: new Date().toISOString() })
+      setSubmitting(false)
+      navigate(tripId ? `/trips/${tripId}` : '/')
+      return
+    }
+
+    let error = null
+    try {
+      ;({ error } = await supabase.from('expenses').insert(newExpense))
+    } catch {
+      enqueueExpense({ ...newExpense, queuedAt: new Date().toISOString() })
+      setSubmitting(false)
+      navigate(tripId ? `/trips/${tripId}` : '/')
+      return
+    }
     setSubmitting(false)
 
     if (error) {
@@ -93,95 +183,214 @@ export default function AddExpense() {
     navigate(tripId ? `/trips/${tripId}` : '/')
   }
 
+  async function handleDelete() {
+    setDeleting(true)
+    setError(null)
+    const { error } = await supabase.from('expenses').delete().eq('id', id)
+    setDeleting(false)
+    if (error) {
+      setError(error.message)
+      return
+    }
+    navigate('/history')
+  }
+
   return (
-    <Layout title="Add expense">
+    <Layout title={isEditing ? 'Edit expense' : 'Add expense'}>
       <div className="mb-4 text-center">
-        <span className="text-4xl font-bold tabular-nums">${amount || '0'}</span>
+        <span className="text-4xl font-bold tabular-nums text-stone-800">{displayAmount} ₫</span>
       </div>
 
       <div className="mb-4">
-        <p className="mb-2 text-sm text-slate-400">Category</p>
-        <div className="flex flex-wrap gap-2">
-          {orderedCategories.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setCategoryId(c.id === categoryId ? '' : c.id)}
-              className={`rounded-full border px-3 py-1.5 text-sm ${
-                categoryId === c.id
-                  ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
-                  : 'border-slate-700 text-slate-300'
-              }`}
-            >
-              {c.icon ? `${c.icon} ` : ''}
-              {c.name}
-            </button>
-          ))}
-          {categories.length === 0 && (
-            <p className="text-sm text-slate-500">Add categories in Settings first.</p>
-          )}
-        </div>
+        <NumberPad onPress={handleKey} />
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        <div>
-          <label className="mb-1 block text-sm text-slate-400" htmlFor="date">
-            Date
+      <section className="mb-4 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
+        <div className="mb-4">
+          <label className="mb-1 block text-sm font-semibold text-stone-500" htmlFor="name">
+            Name
           </label>
           <input
-            id="date"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-sm"
+            id="name"
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Groceries"
+            className="w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
           />
         </div>
+
         <div>
-          <label className="mb-1 block text-sm text-slate-400" htmlFor="trip">
-            Trip (optional)
-          </label>
-          <select
-            id="trip"
-            value={tripId}
-            onChange={(e) => setTripId(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-sm"
-          >
-            <option value="">None</option>
-            {trips.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
+          <p className="mb-2 text-sm font-semibold text-stone-500">Category</p>
+          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+            {orderedCategories.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setCategoryId(c.id === categoryId ? '' : c.id)}
+                className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-sm font-semibold ${
+                  categoryId === c.id
+                    ? 'border-pink-400 bg-pink-100 text-pink-600'
+                    : 'border-stone-200 bg-white text-stone-500'
+                }`}
+              >
+                {categoryIcon(c)} {c.name}
+              </button>
             ))}
-          </select>
+            {categories.length === 0 && (
+              <p className="text-sm text-stone-400">Add categories in Settings first.</p>
+            )}
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="mb-4">
-        <label className="mb-1 block text-sm text-slate-400" htmlFor="note">
-          Note (optional)
-        </label>
-        <input
-          id="note"
-          type="text"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="e.g. Groceries"
-          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-        />
-      </div>
+      <section className="mb-4 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
+        <div className="mb-4">
+          <p className="mb-2 text-sm font-semibold text-stone-500">For</p>
+          <div className="flex gap-2">
+            {FOR_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setForWhom(opt.value)}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold ${
+                  forWhom === opt.value
+                    ? 'border-pink-400 bg-pink-100 text-pink-600'
+                    : 'border-stone-200 bg-white text-stone-500'
+                }`}
+              >
+                <img src={opt.icon} alt="" className="h-5 w-5" />
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-      <NumberPad onPress={handleKey} />
+        <div>
+          <p className="mb-2 text-sm font-semibold text-stone-500">Paid by</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setEmChi(false)}
+              className={`flex-1 rounded-full border px-3 py-1.5 text-sm font-semibold ${
+                !emChi ? 'border-pink-400 bg-pink-100 text-pink-600' : 'border-stone-200 bg-white text-stone-500'
+              }`}
+            >
+              Anh chi
+            </button>
+            <button
+              type="button"
+              onClick={() => setEmChi(true)}
+              className={`flex-1 rounded-full border px-3 py-1.5 text-sm font-semibold ${
+                emChi ? 'border-pink-400 bg-pink-100 text-pink-600' : 'border-stone-200 bg-white text-stone-500'
+              }`}
+            >
+              Em chi
+            </button>
+          </div>
+        </div>
+      </section>
 
-      {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
+      <section className="mb-4 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 flex items-center gap-2 text-sm font-semibold text-stone-500" htmlFor="date">
+              Date
+              {dateBadge && (
+                <span className="rounded-full bg-pink-100 px-2 py-0.5 text-xs font-bold text-pink-600">
+                  {dateBadge}
+                </span>
+              )}
+            </label>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => shiftDate(-1)}
+                aria-label="Previous day"
+                className="rounded-xl border border-pink-200 bg-white px-2 py-2 text-sm font-bold text-stone-500"
+              >
+                ‹
+              </button>
+              <input
+                id="date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full min-w-0 flex-1 rounded-xl border border-pink-200 bg-white px-2 py-2 text-sm text-stone-700"
+              />
+              <button
+                type="button"
+                onClick={() => shiftDate(1)}
+                aria-label="Next day"
+                className="rounded-xl border border-pink-200 bg-white px-2 py-2 text-sm font-bold text-stone-500"
+              >
+                ›
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-stone-500" htmlFor="trip">
+              Trip (optional)
+            </label>
+            <select
+              id="trip"
+              value={tripId}
+              onChange={(e) => setTripId(e.target.value)}
+              className="w-full rounded-xl border border-pink-200 bg-white px-2 py-2 text-sm text-stone-700"
+            >
+              <option value="">None</option>
+              {trips.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      {error && <p className="mt-3 text-sm font-semibold text-rose-500">{error}</p>}
 
       <button
         type="button"
         onClick={handleSubmit}
         disabled={submitting}
-        className="mt-4 w-full rounded-xl bg-emerald-500 py-3 font-semibold text-slate-950 disabled:opacity-60"
+        className="mt-4 w-full rounded-full bg-pink-500 py-3 font-bold text-white shadow-md shadow-pink-200 disabled:opacity-60"
       >
-        {submitting ? 'Saving…' : 'Save expense'}
+        {submitting ? 'Saving…' : isEditing ? 'Save changes' : 'Save expense'}
       </button>
+
+      {isEditing && !confirmDelete && (
+        <button
+          type="button"
+          onClick={() => setConfirmDelete(true)}
+          className="mt-3 w-full rounded-full border border-rose-200 py-2.5 text-sm font-bold text-rose-500"
+        >
+          Delete expense
+        </button>
+      )}
+
+      {isEditing && confirmDelete && (
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(false)}
+            disabled={deleting}
+            className="flex-1 rounded-full border border-stone-200 py-2.5 text-sm font-bold text-stone-500 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="flex-1 rounded-full bg-rose-500 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+          >
+            {deleting ? 'Deleting…' : 'Yes, delete'}
+          </button>
+        </div>
+      )}
     </Layout>
   )
 }

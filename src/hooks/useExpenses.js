@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 
@@ -10,6 +10,7 @@ export function useExpenses({ startDate, endDate, tripId } = {}) {
   const { household } = useHousehold()
   const [expenses, setExpenses] = useState([])
   const [loading, setLoading] = useState(true)
+  const channelId = useId()
 
   const fetchExpenses = useCallback(async () => {
     if (!household) return
@@ -37,7 +38,7 @@ export function useExpenses({ startDate, endDate, tripId } = {}) {
   useEffect(() => {
     if (!household) return
     const channel = supabase
-      .channel(`expenses-${household.id}`)
+      .channel(`expenses-${household.id}-${channelId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'expenses', filter: `household_id=eq.${household.id}` },
@@ -46,7 +47,7 @@ export function useExpenses({ startDate, endDate, tripId } = {}) {
       .subscribe()
 
     return () => supabase.removeChannel(channel)
-  }, [household, fetchExpenses])
+  }, [household, fetchExpenses, channelId])
 
   return { expenses, loading, refresh: fetchExpenses }
 }

@@ -21,11 +21,13 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-slate-100">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
-        <h1 className="text-center text-2xl font-semibold">Budget Tracker</h1>
+    <div className="flex min-h-screen items-center justify-center bg-orange-50 px-6 text-stone-800">
+      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 rounded-3xl border border-pink-100 bg-white p-6 shadow-lg shadow-pink-100">
+        <h1 className="font-heading text-center text-2xl font-bold text-stone-800">
+          🐷 Budget Tracker
+        </h1>
         <div className="space-y-1">
-          <label className="text-sm text-slate-400" htmlFor="email">
+          <label className="text-sm font-semibold text-stone-500" htmlFor="email">
             Email
           </label>
           <input
@@ -35,11 +37,11 @@ export default function Login() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-base outline-none focus:border-emerald-500"
+            className="w-full rounded-xl border border-pink-200 bg-white px-3 py-2.5 text-base text-stone-800 outline-none focus:border-pink-400"
           />
         </div>
         <div className="space-y-1">
-          <label className="text-sm text-slate-400" htmlFor="password">
+          <label className="text-sm font-semibold text-stone-500" htmlFor="password">
             Password
           </label>
           <input
@@ -49,14 +51,14 @@ export default function Login() {
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-base outline-none focus:border-emerald-500"
+            className="w-full rounded-xl border border-pink-200 bg-white px-3 py-2.5 text-base text-stone-800 outline-none focus:border-pink-400"
           />
         </div>
-        {error && <p className="text-sm text-rose-400">{error}</p>}
+        {error && <p className="text-sm font-semibold text-rose-500">{error}</p>}
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-lg bg-emerald-500 py-2.5 font-semibold text-slate-950 disabled:opacity-60"
+          className="w-full rounded-full bg-pink-500 py-2.5 font-bold text-white shadow-md shadow-pink-200 disabled:opacity-60"
         >
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>

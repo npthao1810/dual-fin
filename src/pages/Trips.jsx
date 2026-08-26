@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
+import ActivityTabs from '../components/ActivityTabs'
 import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { formatCurrency } from '../lib/format'
@@ -64,37 +65,38 @@ export default function Trips() {
   }
 
   return (
-    <Layout title="Trips">
+    <Layout title="Activity">
+      <ActivityTabs />
       <button
         type="button"
         onClick={() => setShowForm((v) => !v)}
-        className="mb-4 w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-slate-950"
+        className="mb-4 w-full rounded-full bg-pink-500 py-2.5 text-sm font-bold text-white shadow-md shadow-pink-200"
       >
         {showForm ? 'Cancel' : '+ New trip'}
       </button>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mb-6 space-y-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
+        <form onSubmit={handleCreate} className="mb-6 space-y-3 rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
           <input
             type="text"
             required
             placeholder="Trip name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
           />
           <div className="grid grid-cols-2 gap-2">
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-sm"
+              className="rounded-xl border border-pink-200 bg-white px-2 py-2 text-sm text-stone-700"
             />
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-sm"
+              className="rounded-xl border border-pink-200 bg-white px-2 py-2 text-sm text-stone-700"
             />
           </div>
           <input
@@ -103,12 +105,12 @@ export default function Trips() {
             placeholder="Budget (optional)"
             value={budget}
             onChange={(e) => setBudget(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
           />
           <button
             type="submit"
             disabled={saving}
-            className="w-full rounded-lg bg-emerald-500 py-2 text-sm font-semibold text-slate-950"
+            className="w-full rounded-full bg-pink-500 py-2 text-sm font-bold text-white shadow-md shadow-pink-200"
           >
             Create trip
           </button>
@@ -122,13 +124,13 @@ export default function Trips() {
             <li key={t.id}>
               <Link
                 to={`/trips/${t.id}`}
-                className="block rounded-xl border border-slate-800 bg-slate-900 p-3"
+                className="block rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">{t.name}</span>
-                  <span className="font-semibold">{formatCurrency(spent)}</span>
+                  <span className="font-semibold text-stone-700">✈️ {t.name}</span>
+                  <span className="font-bold text-stone-800">{formatCurrency(spent)}</span>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs font-semibold text-stone-400">
                   {t.start_date ?? '—'} to {t.end_date ?? '—'}
                   {t.budget ? ` · budget ${formatCurrency(t.budget)}` : ''}
                 </p>
@@ -136,7 +138,7 @@ export default function Trips() {
             </li>
           )
         })}
-        {trips.length === 0 && <p className="text-sm text-slate-500">No trips yet.</p>}
+        {trips.length === 0 && <p className="text-sm text-stone-400">No trips yet.</p>}
       </ul>
     </Layout>
   )

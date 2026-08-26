@@ -4,6 +4,7 @@ import RequireAuth from './components/RequireAuth'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import AddExpense from './pages/AddExpense'
+import History from './pages/History'
 import Trips from './pages/Trips'
 import TripDetail from './pages/TripDetail'
 import Charts from './pages/Charts'
@@ -28,6 +29,22 @@ export default function App() {
             element={
               <RequireAuth>
                 <AddExpense />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/edit/:id"
+            element={
+              <RequireAuth>
+                <AddExpense />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/history"
+            element={
+              <RequireAuth>
+                <History />
               </RequireAuth>
             }
           />

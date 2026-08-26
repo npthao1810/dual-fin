@@ -12,6 +12,8 @@ create table households (
   member_1_id    uuid not null references auth.users(id),
   member_2_id    uuid references auth.users(id),
   monthly_budget numeric,
+  daily_income   numeric not null default 1000000,
+  budget_start_date date not null default current_date,
   created_at     timestamptz not null default now()
 );
 
@@ -41,6 +43,8 @@ create table expenses (
   trip_id      uuid references trips(id) on delete set null,
   amount       numeric not null check (amount > 0),
   note         text,
+  for_whom     text not null default 'us' check (for_whom in ('anh', 'em', 'us')),
+  em_chi       boolean not null default false,
   paid_by      uuid not null references auth.users(id),
   date         date not null default current_date,
   created_at   timestamptz not null default now()

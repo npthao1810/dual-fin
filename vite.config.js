@@ -18,8 +18,8 @@ export default defineConfig({
         name: 'Budget Tracker',
         short_name: 'Budget',
         description: 'Shared expense and budget tracker',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
+        theme_color: '#fb7185',
+        background_color: '#fff7ed',
         display: 'standalone',
         start_url: '/',
         icons: [
