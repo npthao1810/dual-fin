@@ -13,10 +13,30 @@ const FOR_ICONS = {
   us: '/icons/nav/us.png',
 }
 
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-5 w-5">
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  )
+}
+
+function FilterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-5 w-5">
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="7" y1="12" x2="17" y2="12" />
+      <line x1="10" y1="18" x2="14" y2="18" />
+    </svg>
+  )
+}
+
 export default function History() {
   const { expenses, loading } = useExpensesWithPending()
 
   const [search, setSearch] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -62,25 +82,45 @@ export default function History() {
       <ActivityTabs />
 
       <div className="mb-3 flex gap-2">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search expenses…"
-          className="flex-1 rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
-        />
         <button
           type="button"
+          aria-label="Search"
+          onClick={() => setSearchOpen((v) => !v)}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
+            searchOpen ? 'border-pink-500 bg-pink-500 text-white' : 'border-pink-200 bg-white text-stone-500'
+          }`}
+        >
+          <SearchIcon />
+        </button>
+        <button
+          type="button"
+          aria-label="Filters"
           onClick={() => setFiltersOpen((v) => !v)}
-          className={`shrink-0 rounded-xl border px-3 py-2 text-sm font-semibold ${
-            activeFilterCount > 0
+          className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
+            filtersOpen || activeFilterCount > 0
               ? 'border-pink-500 bg-pink-500 text-white'
               : 'border-pink-200 bg-white text-stone-500'
           }`}
         >
-          Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+          <FilterIcon />
+          {activeFilterCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">
+              {activeFilterCount}
+            </span>
+          )}
         </button>
       </div>
+
+      {searchOpen && (
+        <input
+          type="text"
+          autoFocus
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search expenses…"
+          className="mb-4 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
+        />
+      )}
 
       {filtersOpen && (
         <div className="mb-4 space-y-3 rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
