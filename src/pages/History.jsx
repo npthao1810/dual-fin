@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import ActivityTabs from '../components/ActivityTabs'
@@ -15,9 +16,40 @@ const FOR_ICONS = {
 export default function History() {
   const { expenses, loading } = useExpensesWithPending()
 
+  const [search, setSearch] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [priceMin, setPriceMin] = useState('')
+  const [priceMax, setPriceMax] = useState('')
+
+  const activeFilterCount =
+    (dateFrom ? 1 : 0) + (dateTo ? 1 : 0) + (priceMin ? 1 : 0) + (priceMax ? 1 : 0)
+
+  function clearFilters() {
+    setDateFrom('')
+    setDateTo('')
+    setPriceMin('')
+    setPriceMax('')
+  }
+
+  const filtered = expenses.filter((e) => {
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      const matchesNote = e.note?.toLowerCase().includes(q)
+      const matchesCategory = e.categories?.name?.toLowerCase().includes(q)
+      if (!matchesNote && !matchesCategory) return false
+    }
+    if (dateFrom && e.date < dateFrom) return false
+    if (dateTo && e.date > dateTo) return false
+    if (priceMin && Number(e.amount) < Number(priceMin)) return false
+    if (priceMax && Number(e.amount) > Number(priceMax)) return false
+    return true
+  })
+
   const groups = []
   let currentDate = null
-  for (const e of expenses) {
+  for (const e of filtered) {
     if (e.date !== currentDate) {
       currentDate = e.date
       groups.push({ date: e.date, items: [] })
@@ -28,9 +60,88 @@ export default function History() {
   return (
     <Layout title="Activity">
       <ActivityTabs />
+
+      <div className="mb-3 flex gap-2">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search expenses…"
+          className="flex-1 rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
+        />
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((v) => !v)}
+          className={`shrink-0 rounded-xl border px-3 py-2 text-sm font-semibold ${
+            activeFilterCount > 0
+              ? 'border-pink-500 bg-pink-500 text-white'
+              : 'border-pink-200 bg-white text-stone-500'
+          }`}
+        >
+          Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+        </button>
+      </div>
+
+      {filtersOpen && (
+        <div className="mb-4 space-y-3 rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
+          <div>
+            <p className="mb-1 text-xs font-semibold text-stone-400">Date range</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="flex-1 rounded-xl border border-pink-200 bg-white px-2 py-1.5 text-sm text-stone-700"
+              />
+              <span className="text-xs text-stone-400">to</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="flex-1 rounded-xl border border-pink-200 bg-white px-2 py-1.5 text-sm text-stone-700"
+              />
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-semibold text-stone-400">Amount (₫)</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="decimal"
+                value={priceMin}
+                onChange={(e) => setPriceMin(e.target.value)}
+                placeholder="Min"
+                className="flex-1 rounded-xl border border-pink-200 bg-white px-2 py-1.5 text-sm text-stone-700"
+              />
+              <span className="text-xs text-stone-400">to</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={priceMax}
+                onChange={(e) => setPriceMax(e.target.value)}
+                placeholder="Max"
+                className="flex-1 rounded-xl border border-pink-200 bg-white px-2 py-1.5 text-sm text-stone-700"
+              />
+            </div>
+          </div>
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-xs font-semibold text-pink-500"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
+
       {loading && <p className="text-sm text-stone-400">Loading…</p>}
       {!loading && expenses.length === 0 && (
         <p className="text-sm text-stone-400">No expenses recorded yet.</p>
+      )}
+      {!loading && expenses.length > 0 && filtered.length === 0 && (
+        <p className="text-sm text-stone-400">No expenses match your search/filters.</p>
       )}
       <div className="space-y-4">
         {groups.map((group) => (
