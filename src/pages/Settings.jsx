@@ -58,6 +58,14 @@ export default function Settings() {
     refresh()
   }
 
+  async function handleUpdateIcon(categoryId, newIcon) {
+    const trimmed = newIcon.trim()
+    const current = categories.find((c) => c.id === categoryId)
+    if (!trimmed || !current || trimmed === current.icon) return
+    await supabase.from('categories').update({ icon: trimmed }).eq('id', categoryId)
+    refresh()
+  }
+
   function budgetValueFor(categoryId) {
     if (budgetDrafts[categoryId] !== undefined) return budgetDrafts[categoryId]
     const existing = budgets.find((b) => b.category_id === categoryId)
@@ -137,7 +145,13 @@ export default function Settings() {
               className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
             >
               <span className="flex flex-1 items-center gap-2 font-semibold text-stone-700">
-                <span>{categoryIcon(c)}</span>
+                <input
+                  type="text"
+                  defaultValue={c.icon ?? guessCategoryEmoji(c.name) ?? fallbackEmojiFor(c.id ?? c.name)}
+                  maxLength={2}
+                  onBlur={(e) => handleUpdateIcon(c.id, e.target.value)}
+                  className="w-8 shrink-0 border-none bg-transparent p-0 text-center outline-none focus:underline"
+                />
                 <input
                   type="text"
                   defaultValue={c.name}
