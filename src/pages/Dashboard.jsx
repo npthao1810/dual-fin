@@ -3,7 +3,7 @@ import Layout from '../components/Layout'
 import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
 import { useBudgets } from '../hooks/useBudgets'
-import { daysBetweenInclusive, firstOfMonth, formatCurrency, toISODate } from '../lib/format'
+import { currentMonthRange, daysBetweenInclusive, firstOfMonth, formatCurrency, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 
 const FOR_LABELS = {
@@ -31,6 +31,20 @@ export default function Dashboard() {
   const daysElapsed = budgetStartDate ? daysBetweenInclusive(budgetStartDate, today) : null
   const incomeToDate = dailyIncome != null && daysElapsed != null ? dailyIncome * daysElapsed : null
   const savings = incomeToDate != null ? incomeToDate - totalSpent : null
+
+  const thisMonth = currentMonthRange()
+  const thisMonthExpenses = monthlyExpenses.filter(
+    (e) => e.date >= thisMonth.start && e.date <= thisMonth.end
+  )
+  const pendingCountThisMonth = thisMonthExpenses.filter((e) => e.pending).length
+  const totalSpentThisMonth = thisMonthExpenses.reduce((sum, e) => sum + Number(e.amount), 0)
+  const daysElapsedThisMonth = daysBetweenInclusive(thisMonth.start, today)
+  const incomeThisMonth = dailyIncome != null ? dailyIncome * daysElapsedThisMonth : null
+  const savingsThisMonth = incomeThisMonth != null ? incomeThisMonth - totalSpentThisMonth : null
+  const monthLabel = (() => {
+    const [y, m, d] = thisMonth.start.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+  })()
 
   const byCategory = {}
   for (const e of monthlyExpenses) {
@@ -65,29 +79,29 @@ export default function Dashboard() {
     : null
 
   return (
-    <Layout title={startLabel ? `Since ${startLabel}` : 'Overview'}>
-      <section className="mb-6 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
-        <p className="text-sm font-semibold text-stone-400">Total spent</p>
-        <p className="mt-1 text-3xl font-bold text-stone-800">{formatCurrency(totalSpent)}</p>
-        {pendingCount > 0 && (
+    <Layout title={monthLabel}>
+      <section className="mb-4 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
+        <p className="text-sm font-semibold text-stone-400">Spent this month</p>
+        <p className="mt-1 text-3xl font-bold text-stone-800">{formatCurrency(totalSpentThisMonth)}</p>
+        {pendingCountThisMonth > 0 && (
           <p className="mt-0.5 text-xs font-semibold text-amber-500">
-            Includes {pendingCount} not-yet-synced expense{pendingCount > 1 ? 's' : ''}
+            Includes {pendingCountThisMonth} not-yet-synced expense{pendingCountThisMonth > 1 ? 's' : ''}
           </p>
         )}
-        {incomeToDate != null && (
+        {incomeThisMonth != null && (
           <div className="mt-3">
-            <BudgetBar spent={totalSpent} limit={incomeToDate} />
+            <BudgetBar spent={totalSpentThisMonth} limit={incomeThisMonth} />
             <p className="mt-1 text-xs font-semibold text-stone-400">
-              {formatCurrency(totalSpent)} of {formatCurrency(incomeToDate)} earned so far ({daysElapsed} days
-              × {formatCurrency(dailyIncome)})
+              {formatCurrency(totalSpentThisMonth)} of {formatCurrency(incomeThisMonth)} earned this month (
+              {daysElapsedThisMonth} days × {formatCurrency(dailyIncome)})
             </p>
           </div>
         )}
-        {savings != null && (
+        {savingsThisMonth != null && (
           <div className="mt-3 flex items-center justify-between border-t border-pink-50 pt-3">
-            <span className="text-sm font-semibold text-stone-400">Savings so far</span>
-            <span className={`text-lg font-bold ${savings >= 0 ? 'text-stone-800' : 'text-rose-500'}`}>
-              {formatCurrency(savings)}
+            <span className="text-sm font-semibold text-stone-400">Savings this month</span>
+            <span className={`text-lg font-bold ${savingsThisMonth >= 0 ? 'text-stone-800' : 'text-rose-500'}`}>
+              {formatCurrency(savingsThisMonth)}
             </span>
           </div>
         )}
@@ -95,6 +109,24 @@ export default function Dashboard() {
           <span className="text-sm font-semibold text-stone-400">Today</span>
           <span className="text-lg font-bold text-pink-500">{formatCurrency(todaySpent)}</span>
         </div>
+      </section>
+
+      <section className="mb-6 rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
+        <p className="mb-2 text-xs font-semibold text-stone-400">
+          So far{startLabel ? ` · since ${startLabel}` : ''}
+        </p>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-stone-500">Total spent</span>
+          <span className="text-base font-bold text-stone-800">{formatCurrency(totalSpent)}</span>
+        </div>
+        {savings != null && (
+          <div className="mt-2 flex items-center justify-between border-t border-pink-50 pt-2">
+            <span className="text-sm font-semibold text-stone-500">Savings so far</span>
+            <span className={`text-base font-bold ${savings >= 0 ? 'text-stone-800' : 'text-rose-500'}`}>
+              {formatCurrency(savings)}
+            </span>
+          </div>
+        )}
       </section>
 
       <Link
