@@ -24,7 +24,7 @@ export default function LoadingScreen() {
           }}
         />
       </div>
-      <p className="text-sm font-semibold text-stone-400">chotto matte ✋🏻</p>
+      <p className="font-heading text-lg font-bold text-pink-400">chotto matte ✋🏻</p>
     </div>
   )
 }
