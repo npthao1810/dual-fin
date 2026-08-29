@@ -24,7 +24,9 @@ export default function LoadingScreen() {
           }}
         />
       </div>
-      <p className="font-heading text-lg font-bold text-pink-400">chotto matte ✋🏻</p>
+      <p style={{ fontFamily: '"Luckiest Guy"' }} className="text-xl text-pink-400">
+        chotto matte ✋🏻
+      </p>
     </div>
   )
 }
