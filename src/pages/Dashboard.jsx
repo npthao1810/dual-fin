@@ -62,7 +62,8 @@ export default function Dashboard() {
   } else {
     const [y, m] = selectedPeriod.split('-').map(Number)
     const range = monthRange(y, m)
-    periodStart = range.start
+    // Clip to the tracking start date for the first (partial) month.
+    periodStart = budgetStartDate && budgetStartDate > range.start ? budgetStartDate : range.start
     periodEnd = range.end > today ? today : range.end
   }
 
