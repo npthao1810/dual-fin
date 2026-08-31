@@ -6,6 +6,27 @@ export function formatCurrency(amount, currency = 'VND') {
   }).format(amount ?? 0)
 }
 
+const CURRENCY_SYMBOLS = {
+  VND: '₫',
+  KRW: '₩',
+  JPY: '¥',
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  THB: '฿',
+}
+
+/** Symbol for a currency code, falling back to the code itself for anything unmapped. */
+export function currencySymbol(code) {
+  if (!code) return '₫'
+  return CURRENCY_SYMBOLS[code.toUpperCase()] ?? code.toUpperCase()
+}
+
+/** Format a plain foreign-currency amount with thousand separators + symbol, e.g. "50,000 ₩". */
+export function formatForeign(amount, code) {
+  return `${Number(amount).toLocaleString('vi-VN')} ${currencySymbol(code)}`
+}
+
 export function currentMonthRange(date = new Date()) {
   const start = new Date(date.getFullYear(), date.getMonth(), 1)
   const end = new Date(date.getFullYear(), date.getMonth() + 1, 0)

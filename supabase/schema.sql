@@ -27,27 +27,32 @@ create table categories (
 );
 
 create table trips (
-  id           uuid primary key default gen_random_uuid(),
-  household_id uuid not null references households(id) on delete cascade,
-  name         text not null,
-  start_date   date,
-  end_date     date,
-  budget       numeric,
-  created_at   timestamptz not null default now()
+  id            uuid primary key default gen_random_uuid(),
+  household_id  uuid not null references households(id) on delete cascade,
+  name          text not null,
+  start_date    date,
+  end_date      date,
+  budget        numeric,
+  icon          text,    -- emoji shown next to the trip name; defaults to ✈️ in the UI
+  currency      text,    -- e.g. 'KRW', 'JPY'; null means the trip is tracked in VND
+  exchange_rate numeric, -- VND per 1 unit of `currency`, entered manually
+  created_at    timestamptz not null default now()
 );
 
 create table expenses (
-  id           uuid primary key default gen_random_uuid(),
-  household_id uuid not null references households(id) on delete cascade,
-  category_id  uuid references categories(id) on delete set null,
-  trip_id      uuid references trips(id) on delete set null,
-  amount       numeric not null check (amount > 0),
-  note         text,
-  for_whom     text not null default 'us' check (for_whom in ('anh', 'em', 'us')),
-  em_chi       boolean not null default false,
-  paid_by      uuid not null references auth.users(id),
-  date         date not null default current_date,
-  created_at   timestamptz not null default now()
+  id              uuid primary key default gen_random_uuid(),
+  household_id    uuid not null references households(id) on delete cascade,
+  category_id     uuid references categories(id) on delete set null,
+  trip_id         uuid references trips(id) on delete set null,
+  amount          numeric not null check (amount > 0), -- always VND
+  original_amount numeric, -- amount actually entered, in `currency`, when foreign
+  currency        text,    -- snapshot of the trip's currency at entry time
+  note            text,
+  for_whom        text not null default 'us' check (for_whom in ('anh', 'em', 'us')),
+  em_chi          boolean not null default false,
+  paid_by         uuid not null references auth.users(id),
+  date            date not null default current_date,
+  created_at      timestamptz not null default now()
 );
 
 create table budgets (

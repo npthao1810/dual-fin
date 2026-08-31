@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Layout from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
-import { formatCurrency } from '../lib/format'
+import { currencySymbol, formatCurrency, formatForeign } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 
 export default function TripDetail() {
@@ -15,14 +15,33 @@ export default function TripDetail() {
   const [deleteError, setDeleteError] = useState(null)
   const { expenses, loading } = useExpensesWithPending({ tripId: id })
 
-  useEffect(() => {
+  function loadTrip() {
     supabase
       .from('trips')
       .select('*')
       .eq('id', id)
       .single()
       .then(({ data }) => setTrip(data))
-  }, [id])
+  }
+
+  useEffect(loadTrip, [id])
+
+  async function handleUpdateCurrency(field, value) {
+    const trimmed = value.trim()
+    if (trimmed === String(trip[field] ?? '')) return
+    const parsed = field === 'exchange_rate' ? (trimmed ? Number(trimmed) : null) : trimmed.toUpperCase() || null
+    const updates = { [field]: parsed }
+    if (field === 'currency' && !trimmed) updates.exchange_rate = null
+    await supabase.from('trips').update(updates).eq('id', id)
+    loadTrip()
+  }
+
+  async function handleUpdateIcon(value) {
+    const trimmed = value.trim()
+    if (trimmed === (trip.icon ?? '')) return
+    await supabase.from('trips').update({ icon: trimmed || null }).eq('id', id)
+    loadTrip()
+  }
 
   async function handleDeleteTrip() {
     setDeleting(true)
@@ -57,7 +76,7 @@ export default function TripDetail() {
   }
 
   return (
-    <Layout title={trip.name}>
+    <Layout title={`${trip.icon || '✈️'} ${trip.name}`}>
       <section className="mb-6 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
         <p className="text-sm font-semibold text-stone-400">Total spent</p>
         <p className="mt-1 text-3xl font-bold text-stone-800">{formatCurrency(total)}</p>
@@ -67,6 +86,46 @@ export default function TripDetail() {
             {total > trip.budget && <span className="ml-1 text-rose-500">· over budget</span>}
           </p>
         )}
+
+        <div className="mt-3 flex items-center gap-2 border-t border-pink-50 pt-3">
+          <span className="text-xs font-semibold text-stone-400">Icon</span>
+          <input
+            type="text"
+            defaultValue={trip.icon ?? ''}
+            placeholder="✈️"
+            maxLength={2}
+            onBlur={(e) => handleUpdateIcon(e.target.value)}
+            className="w-12 rounded-lg border border-pink-200 bg-white px-2 py-1 text-center text-sm"
+          />
+        </div>
+
+        <div className="mt-3 flex items-center gap-2 border-t border-pink-50 pt-3">
+          <span className="text-xs font-semibold text-stone-400">Currency</span>
+          <input
+            type="text"
+            defaultValue={trip.currency ?? ''}
+            placeholder="₫ (none)"
+            onBlur={(e) => handleUpdateCurrency('currency', e.target.value)}
+            className="w-20 rounded-lg border border-pink-200 bg-white px-2 py-1 text-center text-xs uppercase text-stone-700 placeholder:text-stone-300 placeholder:normal-case"
+          />
+          {trip.currency && (
+            <>
+              <span className="text-xs text-stone-400">
+                1 {currencySymbol(trip.currency)} =
+              </span>
+              <input
+                type="number"
+                inputMode="decimal"
+                step="any"
+                defaultValue={trip.exchange_rate ?? ''}
+                placeholder="rate"
+                onBlur={(e) => handleUpdateCurrency('exchange_rate', e.target.value)}
+                className="w-20 rounded-lg border border-pink-200 bg-white px-2 py-1 text-center text-xs text-stone-700 placeholder:text-stone-300"
+              />
+              <span className="text-xs text-stone-400">₫</span>
+            </>
+          )}
+        </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-pink-50 p-3 text-center">
@@ -138,7 +197,14 @@ export default function TripDetail() {
                   </p>
                 )}
               </div>
-              <span className="font-bold text-stone-800">{formatCurrency(e.amount)}</span>
+              <div className="text-right">
+                <span className="font-bold text-stone-800">{formatCurrency(e.amount)}</span>
+                {e.currency && (
+                  <p className="text-xs font-semibold text-stone-400">
+                    {formatForeign(e.original_amount, e.currency)}
+                  </p>
+                )}
+              </div>
             </li>
           ))}
           {!loading && expenses.length === 0 && (

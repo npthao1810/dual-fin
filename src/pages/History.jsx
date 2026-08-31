@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import ActivityTabs from '../components/ActivityTabs'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
-import { formatCurrency } from '../lib/format'
+import { formatCurrency, formatForeign } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 import { removeFromQueue } from '../lib/offlineQueue'
 
@@ -209,7 +209,14 @@ export default function History() {
                         <p className="mt-1 text-xs font-bold text-rose-500">⚠️ Couldn't sync: {e.errorMessage}</p>
                       )}
                     </div>
-                    <span className="font-bold text-stone-800">{formatCurrency(e.amount)}</span>
+                    <div className="text-right">
+                      <span className="font-bold text-stone-800">{formatCurrency(e.amount)}</span>
+                      {e.currency && (
+                        <p className="text-xs font-semibold text-stone-400">
+                          {formatForeign(e.original_amount, e.currency)}
+                        </p>
+                      )}
+                    </div>
                   </>
                 )
 

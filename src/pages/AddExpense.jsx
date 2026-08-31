@@ -5,7 +5,7 @@ import NumberPad from '../components/NumberPad'
 import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { useAuth } from '../context/AuthContext'
-import { toISODate } from '../lib/format'
+import { currencySymbol, formatCurrency, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { enqueueExpense } from '../lib/offlineQueue'
@@ -75,7 +75,7 @@ export default function AddExpense() {
       .single()
       .then(({ data }) => {
         if (!data) return
-        setAmount(String(data.amount))
+        setAmount(String(data.original_amount ?? data.amount))
         setName(data.note ?? '')
         setCategoryId(data.category_id ?? '')
         setForWhom(data.for_whom ?? 'us')
@@ -89,7 +89,7 @@ export default function AddExpense() {
     if (!household) return
     supabase
       .from('trips')
-      .select('id, name')
+      .select('id, name, currency, exchange_rate')
       .eq('household_id', household.id)
       .order('start_date', { ascending: false })
       .then(({ data }) => setTrips(data ?? []))
@@ -143,6 +143,12 @@ export default function AddExpense() {
 
   const displayAmount = amount ? Number(amount).toLocaleString('vi-VN') : '0'
 
+  const activeTrip = trips.find((t) => t.id === tripId)
+  const activeCurrency = activeTrip?.currency ?? null
+  const activeRate = activeTrip?.exchange_rate != null ? Number(activeTrip.exchange_rate) : null
+  const vndPreview =
+    activeCurrency && activeRate && amount ? Math.round(Number(amount) * activeRate) : null
+
   const { today, yesterday } = useMemo(() => {
     const now = new Date()
     return { today: toISODate(now), yesterday: toISODate(new Date(now.getTime() - 24 * 60 * 60 * 1000)) }
@@ -164,6 +170,10 @@ export default function AddExpense() {
       setError('Enter a name for the expense')
       return
     }
+    if (activeCurrency && !activeRate) {
+      setError(`Set an exchange rate for ${activeCurrency} on this trip first`)
+      return
+    }
     if (!household) return
 
     setSubmitting(true)
@@ -172,7 +182,9 @@ export default function AddExpense() {
       household_id: household.id,
       category_id: categoryId || null,
       trip_id: tripId || null,
-      amount: numericAmount,
+      amount: activeCurrency ? Math.round(numericAmount * activeRate) : numericAmount,
+      original_amount: activeCurrency ? numericAmount : null,
+      currency: activeCurrency,
       note: name.trim(),
       for_whom: forWhom,
       em_chi: emChi,
@@ -235,7 +247,14 @@ export default function AddExpense() {
   return (
     <Layout title={isEditing ? 'Edit expense' : 'Add expense'}>
       <div className="mb-4 text-center">
-        <span className="text-4xl font-bold tabular-nums text-stone-800">{displayAmount} ₫</span>
+        <span className="text-4xl font-bold tabular-nums text-stone-800">
+          {displayAmount} {currencySymbol(activeCurrency)}
+        </span>
+        {activeCurrency && (
+          <p className="mt-1 text-sm font-semibold text-stone-400">
+            {vndPreview != null ? `≈ ${formatCurrency(vndPreview)}` : `Set this trip's exchange rate below`}
+          </p>
+        )}
       </div>
 
       <div className="mb-4">
@@ -380,6 +399,7 @@ export default function AddExpense() {
               {trips.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
+                  {t.currency ? ` (${currencySymbol(t.currency)})` : ''}
                 </option>
               ))}
             </select>

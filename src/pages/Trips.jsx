@@ -4,17 +4,20 @@ import Layout from '../components/Layout'
 import ActivityTabs from '../components/ActivityTabs'
 import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
-import { formatCurrency } from '../lib/format'
+import { currencySymbol, formatCurrency } from '../lib/format'
 
 export default function Trips() {
   const { household } = useHousehold()
   const [trips, setTrips] = useState([])
   const [totals, setTotals] = useState({})
   const [showForm, setShowForm] = useState(false)
+  const [icon, setIcon] = useState('')
   const [name, setName] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [budget, setBudget] = useState('')
+  const [currency, setCurrency] = useState('')
+  const [exchangeRate, setExchangeRate] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function loadTrips() {
@@ -48,17 +51,24 @@ export default function Trips() {
     e.preventDefault()
     if (!name.trim() || !household) return
     setSaving(true)
+    const trimmedCurrency = currency.trim().toUpperCase()
     await supabase.from('trips').insert({
       household_id: household.id,
       name: name.trim(),
+      icon: icon.trim() || null,
       start_date: startDate || null,
       end_date: endDate || null,
       budget: budget || null,
+      currency: trimmedCurrency || null,
+      exchange_rate: trimmedCurrency && exchangeRate ? Number(exchangeRate) : null,
     })
+    setIcon('')
     setName('')
     setStartDate('')
     setEndDate('')
     setBudget('')
+    setCurrency('')
+    setExchangeRate('')
     setShowForm(false)
     setSaving(false)
     loadTrips()
@@ -77,14 +87,24 @@ export default function Trips() {
 
       {showForm && (
         <form onSubmit={handleCreate} className="mb-6 space-y-3 rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
-          <input
-            type="text"
-            required
-            placeholder="Trip name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
-          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="✈️"
+              value={icon}
+              onChange={(e) => setIcon(e.target.value)}
+              maxLength={2}
+              className="w-14 shrink-0 rounded-xl border border-pink-200 bg-white px-2 py-2 text-center text-sm"
+            />
+            <input
+              type="text"
+              required
+              placeholder="Trip name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full min-w-0 flex-1 rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
+            />
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <input
               type="date"
@@ -102,11 +122,34 @@ export default function Trips() {
           <input
             type="number"
             inputMode="decimal"
-            placeholder="Budget (optional)"
+            placeholder="Budget in ₫ (optional)"
             value={budget}
             onChange={(e) => setBudget(e.target.value)}
             className="w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
           />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              placeholder="Currency (e.g. KRW)"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              maxLength={6}
+              className="rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm uppercase text-stone-700 placeholder:text-stone-300 placeholder:normal-case"
+            />
+            <input
+              type="number"
+              inputMode="decimal"
+              step="any"
+              placeholder={currency.trim() ? `1 ${currency.trim().toUpperCase()} = ? ₫` : '1 unit = ? ₫'}
+              value={exchangeRate}
+              onChange={(e) => setExchangeRate(e.target.value)}
+              disabled={!currency.trim()}
+              className="rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300 disabled:opacity-50"
+            />
+          </div>
+          <p className="text-xs text-stone-400">
+            Leave currency blank to track this trip in ₫ like normal.
+          </p>
           <button
             type="submit"
             disabled={saving}
@@ -127,12 +170,13 @@ export default function Trips() {
                 className="block rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-stone-700">✈️ {t.name}</span>
+                  <span className="font-semibold text-stone-700">{t.icon || '✈️'} {t.name}</span>
                   <span className="font-bold text-stone-800">{formatCurrency(spent)}</span>
                 </div>
                 <p className="mt-1 text-xs font-semibold text-stone-400">
                   {t.start_date ?? '—'} to {t.end_date ?? '—'}
                   {t.budget ? ` · budget ${formatCurrency(t.budget)}` : ''}
+                  {t.currency ? ` · 1 ${currencySymbol(t.currency)} = ${t.exchange_rate ?? '?'} ₫` : ''}
                 </p>
               </Link>
             </li>
