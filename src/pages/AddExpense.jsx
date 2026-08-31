@@ -89,7 +89,7 @@ export default function AddExpense() {
     if (!household) return
     supabase
       .from('trips')
-      .select('id, name, currency, exchange_rate')
+      .select('id, name, currency, exchange_rate, start_date, end_date')
       .eq('household_id', household.id)
       .order('start_date', { ascending: false })
       .then(({ data }) => setTrips(data ?? []))
@@ -108,6 +108,12 @@ export default function AddExpense() {
         setRecentCategoryIds(seen)
       })
   }, [household])
+
+  useEffect(() => {
+    if (isEditing || presetTripId || trips.length === 0) return
+    const match = trips.find((t) => t.start_date && t.end_date && date >= t.start_date && date <= t.end_date)
+    if (match) setTripId(match.id)
+  }, [date, trips, isEditing, presetTripId])
 
   useEffect(() => {
     if (didSetDefaultCategory.current || categories.length === 0) return
