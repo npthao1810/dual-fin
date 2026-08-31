@@ -18,9 +18,15 @@ function monthLabelFor(monthStartISO) {
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 }
 
-/** "So far" + one option per month from budgetStartDate's month through the current month, newest first. */
+function monthDayLabelFor(iso) {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })
+}
+
+/** "Since <start date>" + one option per month from budgetStartDate's month through the current month, newest first. */
 function buildPeriodOptions(budgetStartDate) {
-  const options = [{ value: 'so_far', label: 'So far' }]
+  const soFarLabel = budgetStartDate ? `Since ${monthDayLabelFor(budgetStartDate)}` : 'So far'
+  const options = [{ value: 'so_far', label: soFarLabel }]
   if (!budgetStartDate) return options
 
   const [startY, startM] = budgetStartDate.split('-').map(Number)
