@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import Layout from '../components/Layout'
-import { supabase } from '../lib/supabase'
+import { mutateOrQueue } from '../lib/mutate'
 import { useAuth } from '../context/AuthContext'
 import { useHousehold } from '../context/HouseholdContext'
 import { useBudgets } from '../hooks/useBudgets'
@@ -33,11 +33,10 @@ export default function Settings() {
     const trimmedName = newCategory.trim()
     const icon =
       newIcon.trim() || guessCategoryEmoji(trimmedName) || fallbackEmojiFor(trimmedName + categories.length)
-    await supabase.from('categories').insert({
-      household_id: household.id,
-      name: trimmedName,
-      icon,
-      color,
+    await mutateOrQueue({
+      table: 'categories',
+      op: 'insert',
+      payload: { id: crypto.randomUUID(), household_id: household.id, name: trimmedName, icon, color },
     })
     setNewCategory('')
     setNewIcon('')
@@ -46,7 +45,7 @@ export default function Settings() {
   }
 
   async function handleDeleteCategory(id) {
-    await supabase.from('categories').delete().eq('id', id)
+    await mutateOrQueue({ table: 'categories', op: 'delete', match: { id } })
     refresh()
   }
 
@@ -54,7 +53,7 @@ export default function Settings() {
     const trimmed = newName.trim()
     const current = categories.find((c) => c.id === categoryId)
     if (!trimmed || !current || trimmed === current.name) return
-    await supabase.from('categories').update({ name: trimmed }).eq('id', categoryId)
+    await mutateOrQueue({ table: 'categories', op: 'update', match: { id: categoryId }, payload: { name: trimmed } })
     refresh()
   }
 
@@ -62,7 +61,7 @@ export default function Settings() {
     const trimmed = newIcon.trim()
     const current = categories.find((c) => c.id === categoryId)
     if (!trimmed || !current || trimmed === current.icon) return
-    await supabase.from('categories').update({ icon: trimmed }).eq('id', categoryId)
+    await mutateOrQueue({ table: 'categories', op: 'update', match: { id: categoryId }, payload: { icon: trimmed } })
     refresh()
   }
 
@@ -92,10 +91,12 @@ export default function Settings() {
 
   async function handleDailyIncomeBlur() {
     if (dailyIncomeDraft === null || dailyIncomeDraft === '' || !household) return
-    await supabase
-      .from('households')
-      .update({ daily_income: Number(dailyIncomeDraft) })
-      .eq('id', household.id)
+    await mutateOrQueue({
+      table: 'households',
+      op: 'update',
+      match: { id: household.id },
+      payload: { daily_income: Number(dailyIncomeDraft) },
+    })
     setDailyIncomeDraft(null)
     refresh()
   }
@@ -105,7 +106,12 @@ export default function Settings() {
   async function handleBudgetStartChange(value) {
     setBudgetStartDraft(value)
     if (!value || !household) return
-    await supabase.from('households').update({ budget_start_date: value }).eq('id', household.id)
+    await mutateOrQueue({
+      table: 'households',
+      op: 'update',
+      match: { id: household.id },
+      payload: { budget_start_date: value },
+    })
     setBudgetStartDraft(null)
     refresh()
   }

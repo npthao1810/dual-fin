@@ -230,7 +230,7 @@ export default function History() {
                       {e.status === 'error' && (
                         <button
                           type="button"
-                          onClick={() => removeFromQueue(e.id)}
+                          onClick={() => removeFromQueue(e.queueId ?? e.id)}
                           className="text-xs font-bold text-stone-400"
                         >
                           Discard

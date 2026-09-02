@@ -6,8 +6,8 @@ import LoadingScreen from './LoadingScreen'
 
 export default function RequireAuth({ children }) {
   const { user, loading: authLoading } = useAuth()
-  const { household, loading: householdLoading, error } = useHousehold()
-  useOfflineSync()
+  const { household, loading: householdLoading, error, refresh: refreshHousehold } = useHousehold()
+  useOfflineSync(refreshHousehold)
 
   if (authLoading) {
     return <LoadingScreen />

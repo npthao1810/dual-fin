@@ -6,7 +6,8 @@ import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
 import { currencySymbol, formatCurrency, formatForeign } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
-import { readCache } from '../lib/localCache'
+import { readCache, writeCache } from '../lib/localCache'
+import { mutateOrQueue } from '../lib/mutate'
 
 export default function TripDetail() {
   const { id } = useParams()
@@ -40,31 +41,57 @@ export default function TripDetail() {
 
   useEffect(loadTrip, [id, household])
 
+  // Applies a trip patch optimistically (state + the trips-list cache) once the
+  // write has actually gone through or been queued — never on a real error.
+  function applyTripPatch(updates) {
+    setTrip((prev) => (prev ? { ...prev, ...updates } : prev))
+    if (household) {
+      const cached = readCache(`trips:${household.id}`)
+      if (cached) {
+        writeCache(`trips:${household.id}`, {
+          ...cached,
+          trips: cached.trips.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+        })
+      }
+    }
+  }
+
   async function handleUpdateCurrency(field, value) {
     const trimmed = value.trim()
     if (trimmed === String(trip[field] ?? '')) return
     const parsed = field === 'exchange_rate' ? (trimmed ? Number(trimmed) : null) : trimmed.toUpperCase() || null
     const updates = { [field]: parsed }
     if (field === 'currency' && !trimmed) updates.exchange_rate = null
-    await supabase.from('trips').update(updates).eq('id', id)
-    loadTrip()
+    const { queued, error } = await mutateOrQueue({ table: 'trips', op: 'update', match: { id }, payload: updates })
+    if (error) return
+    applyTripPatch(updates)
+    if (!queued) loadTrip()
   }
 
   async function handleUpdateIcon(value) {
     const trimmed = value.trim()
     if (trimmed === (trip.icon ?? '')) return
-    await supabase.from('trips').update({ icon: trimmed || null }).eq('id', id)
-    loadTrip()
+    const updates = { icon: trimmed || null }
+    const { queued, error } = await mutateOrQueue({ table: 'trips', op: 'update', match: { id }, payload: updates })
+    if (error) return
+    applyTripPatch(updates)
+    if (!queued) loadTrip()
   }
 
   async function handleDeleteTrip() {
     setDeleting(true)
     setDeleteError(null)
-    const { error } = await supabase.from('trips').delete().eq('id', id)
+    const { error } = await mutateOrQueue({ table: 'trips', op: 'delete', match: { id } })
     setDeleting(false)
     if (error) {
       setDeleteError(error.message)
       return
+    }
+    if (household) {
+      const cached = readCache(`trips:${household.id}`)
+      if (cached) {
+        writeCache(`trips:${household.id}`, { ...cached, trips: cached.trips.filter((t) => t.id !== id) })
+      }
     }
     navigate('/trips')
   }

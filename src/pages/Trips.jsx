@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { currencySymbol, formatCurrency } from '../lib/format'
 import { readCache, writeCache } from '../lib/localCache'
+import { mutateOrQueue } from '../lib/mutate'
 
 function cacheKeyFor(householdId) {
   return `trips:${householdId}`
@@ -65,7 +66,8 @@ export default function Trips() {
     if (!name.trim() || !household) return
     setSaving(true)
     const trimmedCurrency = currency.trim().toUpperCase()
-    await supabase.from('trips').insert({
+    const newTrip = {
+      id: crypto.randomUUID(),
       household_id: household.id,
       name: name.trim(),
       icon: icon.trim() || null,
@@ -74,7 +76,8 @@ export default function Trips() {
       budget: budget || null,
       currency: trimmedCurrency || null,
       exchange_rate: trimmedCurrency && exchangeRate ? Number(exchangeRate) : null,
-    })
+    }
+    const { queued } = await mutateOrQueue({ table: 'trips', op: 'insert', payload: newTrip })
     setIcon('')
     setName('')
     setStartDate('')
@@ -84,6 +87,14 @@ export default function Trips() {
     setExchangeRate('')
     setShowForm(false)
     setSaving(false)
+
+    if (queued) {
+      // Offline: show it right away — a live fetch will reconcile once we're back online.
+      const updatedTrips = [newTrip, ...trips]
+      setTrips(updatedTrips)
+      writeCache(cacheKeyFor(household.id), { trips: updatedTrips, totals })
+      return
+    }
     loadTrips()
   }
 

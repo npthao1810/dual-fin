@@ -7,8 +7,10 @@ import { useHousehold } from '../context/HouseholdContext'
 import { useAuth } from '../context/AuthContext'
 import { currencySymbol, formatCurrency, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
-import { useOnlineStatus } from '../hooks/useOnlineStatus'
-import { enqueueExpense } from '../lib/offlineQueue'
+import { mutateOrQueue } from '../lib/mutate'
+import { getQueue } from '../lib/offlineQueue'
+import { readCache } from '../lib/localCache'
+import { expensesCacheKey } from '../hooks/useExpenses'
 
 const FOR_OPTIONS = [
   { value: 'anh', label: 'Anh', icon: '/icons/nav/anh.png' },
@@ -42,7 +44,6 @@ function clearDraft() {
 export default function AddExpense() {
   const { household, categories } = useHousehold()
   const { user } = useAuth()
-  const isOnline = useOnlineStatus()
   const navigate = useNavigate()
   const { id } = useParams()
   const isEditing = Boolean(id)
@@ -68,22 +69,44 @@ export default function AddExpense() {
 
   useEffect(() => {
     if (!isEditing) return
+
+    // A previous edit to this same expense may still be waiting to sync —
+    // show that intended value rather than the (older) server row.
+    function withPendingOverlay(data) {
+      const pending = getQueue().find(
+        (item) => item.table === 'expenses' && item.op === 'update' && item.match?.id === id
+      )
+      return pending ? { ...data, ...pending.payload } : data
+    }
+
+    function hydrate(data) {
+      const merged = withPendingOverlay(data)
+      setAmount(String(merged.original_amount ?? merged.amount))
+      setName(merged.note ?? '')
+      setCategoryId(merged.category_id ?? '')
+      setForWhom(merged.for_whom ?? 'us')
+      setEmChi(merged.em_chi ?? false)
+      setTripId(merged.trip_id ?? '')
+      setDate(merged.date)
+    }
+
+    // Render from whatever's cached (e.g. from History's list) immediately —
+    // this is what keeps the form from opening blank while offline.
+    if (household) {
+      const cached = readCache(expensesCacheKey(household.id, {}))
+      const cachedMatch = cached?.find((e) => e.id === id)
+      if (cachedMatch) hydrate(cachedMatch)
+    }
+
     supabase
       .from('expenses')
       .select('*')
       .eq('id', id)
       .single()
       .then(({ data }) => {
-        if (!data) return
-        setAmount(String(data.original_amount ?? data.amount))
-        setName(data.note ?? '')
-        setCategoryId(data.category_id ?? '')
-        setForWhom(data.for_whom ?? 'us')
-        setEmChi(data.em_chi ?? false)
-        setTripId(data.trip_id ?? '')
-        setDate(data.date)
+        if (data) hydrate(data)
       })
-  }, [id, isEditing])
+  }, [id, isEditing, household])
 
   useEffect(() => {
     if (!household) return
@@ -198,7 +221,7 @@ export default function AddExpense() {
     }
 
     if (isEditing) {
-      const { error } = await supabase.from('expenses').update(payload).eq('id', id)
+      const { error } = await mutateOrQueue({ table: 'expenses', op: 'update', match: { id }, payload })
       setSubmitting(false)
       if (error) {
         setError(error.message)
@@ -209,25 +232,7 @@ export default function AddExpense() {
     }
 
     const newExpense = { id: crypto.randomUUID(), ...payload, paid_by: user.id }
-
-    if (!isOnline) {
-      enqueueExpense({ ...newExpense, queuedAt: new Date().toISOString() })
-      clearDraft()
-      setSubmitting(false)
-      navigate(tripId ? `/trips/${tripId}` : '/')
-      return
-    }
-
-    let error = null
-    try {
-      ;({ error } = await supabase.from('expenses').insert(newExpense))
-    } catch {
-      enqueueExpense({ ...newExpense, queuedAt: new Date().toISOString() })
-      clearDraft()
-      setSubmitting(false)
-      navigate(tripId ? `/trips/${tripId}` : '/')
-      return
-    }
+    const { error } = await mutateOrQueue({ table: 'expenses', op: 'insert', payload: newExpense })
     setSubmitting(false)
 
     if (error) {
@@ -241,7 +246,7 @@ export default function AddExpense() {
   async function handleDelete() {
     setDeleting(true)
     setError(null)
-    const { error } = await supabase.from('expenses').delete().eq('id', id)
+    const { error } = await mutateOrQueue({ table: 'expenses', op: 'delete', match: { id } })
     setDeleting(false)
     if (error) {
       setError(error.message)

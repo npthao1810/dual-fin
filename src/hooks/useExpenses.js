@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { readCache, writeCache } from '../lib/localCache'
 
-function cacheKeyFor(householdId, filters) {
+export function expensesCacheKey(householdId, filters) {
   return `expenses:${householdId}:${JSON.stringify(filters)}`
 }
 
@@ -16,7 +16,7 @@ function cacheKeyFor(householdId, filters) {
  */
 export function useExpenses({ startDate, endDate, tripId } = {}) {
   const { household } = useHousehold()
-  const key = household ? cacheKeyFor(household.id, { startDate, endDate, tripId }) : null
+  const key = household ? expensesCacheKey(household.id, { startDate, endDate, tripId }) : null
   const [expenses, setExpenses] = useState(() => (key && readCache(key)) || [])
   const [loading, setLoading] = useState(() => !(key && readCache(key)))
   const loadedKeyRef = useRef(key)

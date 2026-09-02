@@ -1,5 +1,5 @@
-import { supabase } from './supabase'
 import { getQueue, removeFromQueue, markQueueItemError } from './offlineQueue'
+import { runMutation } from './mutate'
 import { isNetworkError } from './network'
 
 let syncing = false
@@ -10,10 +10,9 @@ export async function syncOfflineQueue() {
   try {
     for (const item of getQueue()) {
       if (item.status === 'error') continue
-      const { status: _status, errorMessage: _errorMessage, queuedAt: _queuedAt, ...payload } = item
 
       try {
-        const { error } = await supabase.from('expenses').insert(payload)
+        const { error } = await runMutation(item)
         if (error) {
           if (isNetworkError(error)) continue
           markQueueItemError(item.id, error.message)

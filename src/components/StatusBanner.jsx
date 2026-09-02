@@ -10,7 +10,7 @@ export default function StatusBanner() {
   if (!isOnline) {
     return (
       <div className="bg-stone-700 px-4 py-2 text-center text-xs font-semibold text-white">
-        📡 Offline — new expenses will sync automatically{pendingCount > 0 ? ` (${pendingCount} waiting)` : ''}
+        📡 Offline — changes will sync automatically{pendingCount > 0 ? ` (${pendingCount} waiting)` : ''}
       </div>
     )
   }
@@ -18,7 +18,7 @@ export default function StatusBanner() {
   if (errorCount > 0) {
     return (
       <div className="bg-rose-500 px-4 py-2 text-center text-xs font-semibold text-white">
-        ⚠️ {errorCount} expense{errorCount > 1 ? 's' : ''} couldn't sync — check History
+        ⚠️ {errorCount} change{errorCount > 1 ? 's' : ''} couldn't sync
       </div>
     )
   }
@@ -26,7 +26,7 @@ export default function StatusBanner() {
   if (pendingCount > 0) {
     return (
       <div className="bg-amber-400 px-4 py-2 text-center text-xs font-semibold text-stone-900">
-        🔄 Syncing {pendingCount} expense{pendingCount > 1 ? 's' : ''}…
+        🔄 Syncing {pendingCount} change{pendingCount > 1 ? 's' : ''}…
       </div>
     )
   }

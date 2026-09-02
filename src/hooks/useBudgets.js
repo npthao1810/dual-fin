@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { readCache, writeCache } from '../lib/localCache'
+import { mutateOrQueue } from '../lib/mutate'
 
 function cacheKeyFor(householdId, month) {
   return `budgets:${householdId}:${month}`
@@ -44,27 +45,23 @@ export function useBudgets(month) {
 
   async function upsertBudget(categoryId, limitAmount) {
     if (!household) return
-    const { error } = await supabase.from('budgets').upsert(
-      {
-        household_id: household.id,
-        category_id: categoryId,
-        month,
-        limit_amount: limitAmount,
-      },
-      { onConflict: 'household_id,category_id,month' }
-    )
+    const { error } = await mutateOrQueue({
+      table: 'budgets',
+      op: 'upsert',
+      payload: { household_id: household.id, category_id: categoryId, month, limit_amount: limitAmount },
+      options: { onConflict: 'household_id,category_id,month' },
+    })
     if (!error) await fetchBudgets()
     return error
   }
 
   async function deleteBudget(categoryId) {
     if (!household) return
-    const { error } = await supabase
-      .from('budgets')
-      .delete()
-      .eq('household_id', household.id)
-      .eq('category_id', categoryId)
-      .eq('month', month)
+    const { error } = await mutateOrQueue({
+      table: 'budgets',
+      op: 'delete',
+      match: { household_id: household.id, category_id: categoryId, month },
+    })
     if (!error) await fetchBudgets()
     return error
   }

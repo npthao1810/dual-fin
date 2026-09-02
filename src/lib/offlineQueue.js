@@ -15,10 +15,33 @@ function setQueue(items) {
   window.dispatchEvent(new Event(QUEUE_EVENT))
 }
 
-export function enqueueExpense(expense) {
+/**
+ * Queue a Supabase write to replay once we're back online.
+ * - op: 'insert' | 'update' | 'delete' | 'upsert'
+ * - match: primary-key filter for 'update'/'delete', e.g. { id }
+ * - payload: row data for 'insert'/'update'/'upsert'
+ * - options: passed through to .upsert(), e.g. { onConflict }
+ */
+export function enqueueMutation({ table, op, match = null, payload = null, options = null }) {
   const queue = getQueue()
-  queue.push({ ...expense, status: 'pending', errorMessage: null })
+  // Inserts keep the row's own id as the queue id, so a still-pending row
+  // (an expense, say) can be found and discarded by the same id used
+  // everywhere else in the UI.
+  const id = op === 'insert' && payload?.id ? payload.id : crypto.randomUUID()
+  const item = {
+    id,
+    table,
+    op,
+    match,
+    payload,
+    options,
+    queuedAt: new Date().toISOString(),
+    status: 'pending',
+    errorMessage: null,
+  }
+  queue.push(item)
   setQueue(queue)
+  return item
 }
 
 export function removeFromQueue(id) {

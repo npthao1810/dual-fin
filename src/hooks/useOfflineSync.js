@@ -1,15 +1,20 @@
 import { useEffect } from 'react'
 import { syncOfflineQueue } from '../lib/offlineSync'
 
-export function useOfflineSync() {
+/** Drives the offline queue, and optionally calls onSynced after each pass (e.g. to refresh data that has no realtime subscription). */
+export function useOfflineSync(onSynced) {
   useEffect(() => {
-    syncOfflineQueue()
+    function runSync() {
+      syncOfflineQueue().finally(() => onSynced?.())
+    }
+
+    runSync()
 
     function onOnline() {
-      syncOfflineQueue()
+      runSync()
     }
     function onVisible() {
-      if (document.visibilityState === 'visible') syncOfflineQueue()
+      if (document.visibilityState === 'visible') runSync()
     }
 
     window.addEventListener('online', onOnline)
@@ -18,5 +23,6 @@ export function useOfflineSync() {
       window.removeEventListener('online', onOnline)
       document.removeEventListener('visibilitychange', onVisible)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 }
