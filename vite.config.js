@@ -43,6 +43,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        // Every route (e.g. /trips/:id) is client-side — serve the cached app shell
+        // for any navigation the network can't fulfil, instead of a browser error page.
+        navigateFallback: '/index.html',
       },
     }),
   ],

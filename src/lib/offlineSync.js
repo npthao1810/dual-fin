@@ -1,12 +1,8 @@
 import { supabase } from './supabase'
 import { getQueue, removeFromQueue, markQueueItemError } from './offlineQueue'
+import { isNetworkError } from './network'
 
 let syncing = false
-
-function isNetworkError(error) {
-  const message = (error?.message ?? '').toLowerCase()
-  return message.includes('fetch') || message.includes('network') || message.includes('load failed')
-}
 
 export async function syncOfflineQueue() {
   if (syncing || !navigator.onLine) return

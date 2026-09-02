@@ -5,11 +5,17 @@ import ActivityTabs from '../components/ActivityTabs'
 import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { currencySymbol, formatCurrency } from '../lib/format'
+import { readCache, writeCache } from '../lib/localCache'
+
+function cacheKeyFor(householdId) {
+  return `trips:${householdId}`
+}
 
 export default function Trips() {
   const { household } = useHousehold()
-  const [trips, setTrips] = useState([])
-  const [totals, setTotals] = useState({})
+  const cached = household ? readCache(cacheKeyFor(household.id)) : null
+  const [trips, setTrips] = useState(() => cached?.trips ?? [])
+  const [totals, setTotals] = useState(() => cached?.totals ?? {})
   const [showForm, setShowForm] = useState(false)
   const [icon, setIcon] = useState('')
   const [name, setName] = useState('')
@@ -22,24 +28,31 @@ export default function Trips() {
 
   async function loadTrips() {
     if (!household) return
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('trips')
       .select('*')
       .eq('household_id', household.id)
       .order('start_date', { ascending: false })
+    // Keep showing whatever's cached/on screen if the request failed (e.g. offline).
+    if (error) return
     setTrips(data ?? [])
 
-    const { data: expenseData } = await supabase
+    const { data: expenseData, error: expenseError } = await supabase
       .from('expenses')
       .select('trip_id, amount')
       .eq('household_id', household.id)
       .not('trip_id', 'is', null)
+    if (expenseError) {
+      writeCache(cacheKeyFor(household.id), { trips: data ?? [], totals })
+      return
+    }
 
     const sums = {}
     for (const e of expenseData ?? []) {
       sums[e.trip_id] = (sums[e.trip_id] ?? 0) + Number(e.amount)
     }
     setTotals(sums)
+    writeCache(cacheKeyFor(household.id), { trips: data ?? [], totals: sums })
   }
 
   useEffect(() => {

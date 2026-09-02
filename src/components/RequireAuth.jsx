@@ -1,14 +1,21 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { HouseholdProvider, useHousehold } from '../context/HouseholdContext'
+import { useHousehold } from '../context/HouseholdContext'
 import { useOfflineSync } from '../hooks/useOfflineSync'
 import LoadingScreen from './LoadingScreen'
 
-function HouseholdGate({ children }) {
-  const { household, loading, error } = useHousehold()
+export default function RequireAuth({ children }) {
+  const { user, loading: authLoading } = useAuth()
+  const { household, loading: householdLoading, error } = useHousehold()
   useOfflineSync()
 
-  if (loading) {
+  if (authLoading) {
+    return <LoadingScreen />
+  }
+
+  if (!user) return <Navigate to="/login" replace />
+
+  if (householdLoading) {
     return <LoadingScreen />
   }
 
@@ -30,20 +37,4 @@ function HouseholdGate({ children }) {
   }
 
   return children
-}
-
-export default function RequireAuth({ children }) {
-  const { user, loading } = useAuth()
-
-  if (loading) {
-    return <LoadingScreen />
-  }
-
-  if (!user) return <Navigate to="/login" replace />
-
-  return (
-    <HouseholdProvider>
-      <HouseholdGate>{children}</HouseholdGate>
-    </HouseholdProvider>
-  )
 }

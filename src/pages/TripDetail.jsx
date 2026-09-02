@@ -2,29 +2,43 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Layout from '../components/Layout'
 import { supabase } from '../lib/supabase'
+import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
 import { currencySymbol, formatCurrency, formatForeign } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
+import { readCache } from '../lib/localCache'
 
 export default function TripDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [trip, setTrip] = useState(null)
+  const { household } = useHousehold()
+  const [trip, setTrip] = useState(() => {
+    const cached = household && readCache(`trips:${household.id}`)
+    return cached?.trips?.find((t) => t.id === id) ?? null
+  })
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const { expenses, loading } = useExpensesWithPending({ tripId: id })
 
   function loadTrip() {
+    // Switching between trips: show the cached copy immediately, then refresh in the background.
+    const cached = household && readCache(`trips:${household.id}`)
+    const match = cached?.trips?.find((t) => t.id === id)
+    if (match) setTrip(match)
+
     supabase
       .from('trips')
       .select('*')
       .eq('id', id)
       .single()
-      .then(({ data }) => setTrip(data))
+      .then(({ data }) => {
+        // Keep showing the cached/previous trip if this fetch failed (e.g. offline).
+        if (data) setTrip(data)
+      })
   }
 
-  useEffect(loadTrip, [id])
+  useEffect(loadTrip, [id, household])
 
   async function handleUpdateCurrency(field, value) {
     const trimmed = value.trim()
