@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
+import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
 import { useBudgets } from '../hooks/useBudgets'
@@ -53,6 +54,16 @@ export default function Dashboard() {
   const currentMonth = firstOfMonth()
   const { expenses, loading } = useExpensesWithPending({ startDate: budgetStartDate, endDate: today })
 
+  const [trips, setTrips] = useState([])
+  useEffect(() => {
+    if (!household) return
+    supabase
+      .from('trips')
+      .select('id, name, icon, budget')
+      .eq('household_id', household.id)
+      .then(({ data }) => setTrips(data ?? []))
+  }, [household])
+
   const [selectedPeriod, setSelectedPeriod] = useState(currentMonth)
   const periodOptions = buildPeriodOptions(budgetStartDate)
   const selectedLabel = periodOptions.find((o) => o.value === selectedPeriod)?.label ?? 'So far'
@@ -100,6 +111,18 @@ export default function Dashboard() {
     byCategory[key].total += Number(e.amount)
   }
   const categoryRows = Object.values(byCategory).sort((a, b) => b.total - a.total)
+
+  const tripExpenses = expenses.filter(
+    (e) => e.trip_id && periodStart && e.date >= periodStart && e.date <= periodEnd
+  )
+  const byTrip = {}
+  for (const e of tripExpenses) {
+    if (!byTrip[e.trip_id]) {
+      byTrip[e.trip_id] = { trip: trips.find((t) => t.id === e.trip_id), total: 0 }
+    }
+    byTrip[e.trip_id].total += Number(e.amount)
+  }
+  const tripRows = Object.values(byTrip).sort((a, b) => b.total - a.total)
 
   const byPerson = { anh: 0, em: 0, us: 0 }
   for (const e of periodExpenses) {
@@ -162,6 +185,37 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+
+      {tripRows.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2 text-sm font-semibold text-stone-500">Trips ({selectedLabel})</h2>
+          <ul className="space-y-2">
+            {tripRows.map(({ trip, total }) => (
+              <li key={trip?.id ?? 'unknown-trip'}>
+                <Link
+                  to={trip ? `/trips/${trip.id}` : '/trips'}
+                  className="block rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-stone-700">
+                      {trip?.icon || '✈️'} {trip?.name ?? 'Trip'}
+                    </span>
+                    <span className="font-bold text-stone-800">{formatCurrency(total)}</span>
+                  </div>
+                  {trip?.budget && (
+                    <div className="mt-2">
+                      <BudgetBar spent={total} limit={Number(trip.budget)} />
+                    </div>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-stone-400">
+            Not counted toward Total spent / Savings above — trips track against their own budget.
+          </p>
+        </section>
+      )}
 
       <Link
         to="/add"
