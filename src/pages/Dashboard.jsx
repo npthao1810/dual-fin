@@ -123,6 +123,30 @@ export default function Dashboard() {
     byTrip[e.trip_id].total += Number(e.amount)
   }
   const tripRows = Object.values(byTrip).sort((a, b) => b.total - a.total)
+  const tripsTotal = tripRows.reduce((sum, r) => sum + r.total, 0)
+  const savingsAfterTrips = savings != null ? savings - tripsTotal : null
+
+  const dailySpend = []
+  if (periodStart) {
+    const byDate = {}
+    for (const e of expenses) {
+      if (e.date < periodStart || e.date > periodEnd) continue
+      byDate[e.date] = (byDate[e.date] ?? 0) + Number(e.amount)
+    }
+    const [sy, sm, sd] = periodStart.split('-').map(Number)
+    const [ey, em, ed] = periodEnd.split('-').map(Number)
+    let cursor = new Date(sy, sm - 1, sd)
+    const end = new Date(ey, em - 1, ed)
+    while (cursor <= end) {
+      const iso = toISODate(cursor)
+      dailySpend.push({ date: iso, total: byDate[iso] ?? 0 })
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)
+    }
+  }
+  const maxDaily = Math.max(1, ...dailySpend.map((d) => d.total))
+  const avgDaily = dailySpend.length
+    ? dailySpend.reduce((sum, d) => sum + d.total, 0) / dailySpend.length
+    : 0
 
   const byPerson = { anh: 0, em: 0, us: 0 }
   for (const e of periodExpenses) {
@@ -178,6 +202,18 @@ export default function Dashboard() {
             </span>
           </div>
         )}
+        {savingsAfterTrips != null && tripsTotal > 0 && (
+          <div className="mt-1 flex items-center justify-between">
+            <span className="text-xs font-semibold text-stone-400">
+              Savings after trips (−{formatCurrency(tripsTotal)})
+            </span>
+            <span
+              className={`text-sm font-bold ${savingsAfterTrips >= 0 ? 'text-stone-600' : 'text-rose-500'}`}
+            >
+              {formatCurrency(savingsAfterTrips)}
+            </span>
+          </div>
+        )}
         {showsToday && (
           <div className="mt-3 flex items-center justify-between border-t border-pink-50 pt-3">
             <span className="text-sm font-semibold text-stone-400">Today</span>
@@ -185,6 +221,41 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+
+      {dailySpend.length > 0 && (
+        <section className="mb-6 rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-stone-500">Per day ({selectedLabel})</h2>
+            <span className="text-xs font-semibold text-stone-400">avg {formatCurrency(avgDaily)}/day</span>
+          </div>
+          <div className="-mx-1 flex items-end gap-1 overflow-x-auto px-1 pb-1">
+            {dailySpend.map((d) => {
+              const isToday = d.date === today
+              const heightPct = Math.max(4, Math.round((d.total / maxDaily) * 100))
+              const dayNum = Number(d.date.slice(8, 10))
+              return (
+                <div
+                  key={d.date}
+                  className="flex w-4 flex-shrink-0 flex-col items-center gap-1"
+                  title={`${d.date}: ${formatCurrency(d.total)}`}
+                >
+                  <div className="flex h-16 w-full items-end">
+                    <div
+                      className={`w-full rounded-t-sm transition-all ${
+                        isToday ? 'bg-pink-500' : d.total > 0 ? 'bg-pink-300' : 'bg-pink-50'
+                      }`}
+                      style={{ height: `${heightPct}%` }}
+                    />
+                  </div>
+                  <span className={`text-[9px] font-semibold ${isToday ? 'text-pink-600' : 'text-stone-300'}`}>
+                    {dayNum}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {tripRows.length > 0 && (
         <section className="mb-6">

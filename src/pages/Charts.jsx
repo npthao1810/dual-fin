@@ -119,15 +119,27 @@ export default function Charts() {
         {dailyTotals.length === 0 ? (
           <p className="text-sm text-stone-400">No data yet.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={dailyTotals}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#fce7f3" />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#a8a29e' }} tickFormatter={(d) => d.slice(5)} />
-              <YAxis tick={{ fontSize: 10, fill: '#a8a29e' }} />
-              <Tooltip formatter={(value) => formatCurrency(value)} contentStyle={tooltipStyle} />
-              <Line type="monotone" dataKey="total" stroke="#fb7185" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          <div className="-mx-4 overflow-x-auto px-4">
+            <div style={{ width: Math.max(dailyTotals.length * 28, 300), height: 220 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={dailyTotals} margin={{ left: -20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#fce7f3" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10, fill: '#a8a29e' }}
+                    tickFormatter={(d) => d.slice(5)}
+                    interval={Math.max(0, Math.ceil(dailyTotals.length / 8) - 1)}
+                  />
+                  <YAxis tick={{ fontSize: 10, fill: '#a8a29e' }} width={54} />
+                  <Tooltip formatter={(value) => formatCurrency(value)} contentStyle={tooltipStyle} />
+                  <Line type="monotone" dataKey="total" stroke="#fb7185" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+        {dailyTotals.length > 10 && (
+          <p className="mt-1 text-center text-[10px] text-stone-300">← scroll for more →</p>
         )}
       </section>
 
@@ -136,21 +148,28 @@ export default function Charts() {
         {monthlyStats.length === 0 ? (
           <p className="text-sm text-stone-400">No data yet.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={monthlyStats}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#fce7f3" />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#a8a29e' }} />
-              <YAxis tick={{ fontSize: 10, fill: '#a8a29e' }} />
-              <Tooltip formatter={(value) => formatCurrency(value)} contentStyle={tooltipStyle} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="expense" name="Spend" stackId="actual" barSize={64} fill="#fb7185" />
-              <Bar dataKey="savings" name="Savings" stackId="actual" barSize={64} fill="#fb923c" radius={[4, 4, 0, 0]}>
-                {monthlyStats.map((m) => (
-                  <Cell key={m.label} fill={m.savings >= 0 ? '#fb923c' : '#f43f5e'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="-mx-4 overflow-x-auto px-4">
+            <div style={{ width: Math.max(monthlyStats.length * 90, 300), height: 260 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyStats} margin={{ left: -20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#fce7f3" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#a8a29e' }} />
+                  <YAxis tick={{ fontSize: 10, fill: '#a8a29e' }} width={54} />
+                  <Tooltip formatter={(value) => formatCurrency(value)} contentStyle={tooltipStyle} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="expense" name="Spend" stackId="actual" barSize={48} fill="#fb7185" />
+                  <Bar dataKey="savings" name="Savings" stackId="actual" barSize={48} fill="#fb923c" radius={[4, 4, 0, 0]}>
+                    {monthlyStats.map((m) => (
+                      <Cell key={m.label} fill={m.savings >= 0 ? '#fb923c' : '#f43f5e'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+        {monthlyStats.length > 3 && (
+          <p className="mt-1 text-center text-[10px] text-stone-300">← scroll for more →</p>
         )}
       </section>
     </Layout>
