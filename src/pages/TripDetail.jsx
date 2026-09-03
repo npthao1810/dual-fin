@@ -171,6 +171,7 @@ export default function TripDetail() {
 
       <Link
         to={`/add?trip=${id}`}
+        state={{ trip }}
         className="mb-6 block w-full rounded-full bg-pink-500 py-3 text-center font-bold text-white shadow-md shadow-pink-200"
       >
         + Add expense to this trip

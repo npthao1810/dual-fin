@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout'
 import NumberPad from '../components/NumberPad'
 import { supabase } from '../lib/supabase'
@@ -9,7 +9,7 @@ import { currencySymbol, formatCurrency, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 import { mutateOrQueue } from '../lib/mutate'
 import { getQueue } from '../lib/offlineQueue'
-import { readCache } from '../lib/localCache'
+import { readCache, writeCache } from '../lib/localCache'
 import { expensesCacheKey } from '../hooks/useExpenses'
 import { useRowsWithPending } from '../hooks/useRowsWithPending'
 
@@ -46,6 +46,7 @@ export default function AddExpense() {
   const { household, categories } = useHousehold()
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const { id } = useParams()
   const isEditing = Boolean(id)
   const [searchParams] = useSearchParams()
@@ -62,7 +63,13 @@ export default function AddExpense() {
   const [date, setDate] = useState(() => draft?.date ?? toISODate(new Date()))
   const [baseTrips, setBaseTrips] = useState(() => {
     const cached = household && readCache(`trips:${household.id}`)
-    return cached?.trips ?? []
+    const base = cached?.trips ?? []
+    // Arriving from "+ Add expense to this trip" already carries the trip
+    // (currency included) — use it immediately so the currency symbol
+    // doesn't flash in late once the full trips list has been (re)fetched.
+    const fromNav = location.state?.trip
+    if (!fromNav) return base
+    return [fromNav, ...base.filter((t) => t.id !== fromNav.id)]
   })
   const trips = useRowsWithPending(baseTrips, 'trips', household ? { household_id: household.id } : null)
   const [recentCategoryIds, setRecentCategoryIds] = useState([])
@@ -122,7 +129,12 @@ export default function AddExpense() {
       .eq('household_id', household.id)
       .order('start_date', { ascending: false })
       .then(({ data }) => {
-        if (data) setBaseTrips(data)
+        if (!data) return
+        setBaseTrips(data)
+        // Keep the shared trips cache warm too, so the next visit here (or to
+        // Trips/TripDetail) doesn't have to wait on a fetch to know currencies.
+        const key = `trips:${household.id}`
+        writeCache(key, { trips: data, totals: readCache(key)?.totals ?? {} })
       })
 
     supabase
