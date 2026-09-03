@@ -11,6 +11,7 @@ import { mutateOrQueue } from '../lib/mutate'
 import { getQueue } from '../lib/offlineQueue'
 import { readCache } from '../lib/localCache'
 import { expensesCacheKey } from '../hooks/useExpenses'
+import { useRowsWithPending } from '../hooks/useRowsWithPending'
 
 const FOR_OPTIONS = [
   { value: 'anh', label: 'Anh', icon: '/icons/nav/anh.png' },
@@ -59,7 +60,11 @@ export default function AddExpense() {
   const [emChi, setEmChi] = useState(() => draft?.emChi ?? false)
   const [tripId, setTripId] = useState(() => draft?.tripId ?? presetTripId)
   const [date, setDate] = useState(() => draft?.date ?? toISODate(new Date()))
-  const [trips, setTrips] = useState([])
+  const [baseTrips, setBaseTrips] = useState(() => {
+    const cached = household && readCache(`trips:${household.id}`)
+    return cached?.trips ?? []
+  })
+  const trips = useRowsWithPending(baseTrips, 'trips', household ? { household_id: household.id } : null)
   const [recentCategoryIds, setRecentCategoryIds] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -110,12 +115,15 @@ export default function AddExpense() {
 
   useEffect(() => {
     if (!household) return
+    // Keep showing cached/queued trips if this fetch fails (e.g. offline).
     supabase
       .from('trips')
       .select('id, name, currency, exchange_rate, start_date, end_date')
       .eq('household_id', household.id)
       .order('start_date', { ascending: false })
-      .then(({ data }) => setTrips(data ?? []))
+      .then(({ data }) => {
+        if (data) setBaseTrips(data)
+      })
 
     supabase
       .from('expenses')
@@ -124,8 +132,9 @@ export default function AddExpense() {
       .order('created_at', { ascending: false })
       .limit(20)
       .then(({ data }) => {
+        if (!data) return
         const seen = []
-        for (const row of data ?? []) {
+        for (const row of data) {
           if (row.category_id && !seen.includes(row.category_id)) seen.push(row.category_id)
         }
         setRecentCategoryIds(seen)
