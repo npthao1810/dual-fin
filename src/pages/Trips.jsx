@@ -1,25 +1,29 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import ActivityTabs from '../components/ActivityTabs'
-import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { currencySymbol, formatCurrency } from '../lib/format'
-import { readCache, writeCache } from '../lib/localCache'
 import { mutateOrQueue } from '../lib/mutate'
 import { removeFromQueue } from '../lib/offlineQueue'
 import { useRowsWithPending } from '../hooks/useRowsWithPending'
-
-function cacheKeyFor(householdId) {
-  return `trips:${householdId}`
-}
+import { useTrips } from '../hooks/useTrips'
+import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
 
 export default function Trips() {
   const { household } = useHousehold()
-  const cached = household ? readCache(cacheKeyFor(household.id)) : null
-  const [trips, setTrips] = useState(() => cached?.trips ?? [])
-  const [totals, setTotals] = useState(() => cached?.totals ?? {})
+  const { trips, refresh: refreshTrips } = useTrips()
   const displayTrips = useRowsWithPending(trips, 'trips', household ? { household_id: household.id } : null)
+
+  // All household expenses, pending ones included, so a trip's "spent so
+  // far" here matches what its own detail page shows (see useExpensesWithPending).
+  const { expenses } = useExpensesWithPending()
+  const totals = {}
+  for (const e of expenses) {
+    if (!e.trip_id) continue
+    totals[e.trip_id] = (totals[e.trip_id] ?? 0) + Number(e.amount)
+  }
+
   const [showForm, setShowForm] = useState(false)
   const [icon, setIcon] = useState('')
   const [name, setName] = useState('')
@@ -29,40 +33,6 @@ export default function Trips() {
   const [currency, setCurrency] = useState('')
   const [exchangeRate, setExchangeRate] = useState('')
   const [saving, setSaving] = useState(false)
-
-  async function loadTrips() {
-    if (!household) return
-    const { data, error } = await supabase
-      .from('trips')
-      .select('*')
-      .eq('household_id', household.id)
-      .order('start_date', { ascending: false })
-    // Keep showing whatever's cached/on screen if the request failed (e.g. offline).
-    if (error) return
-    setTrips(data ?? [])
-
-    const { data: expenseData, error: expenseError } = await supabase
-      .from('expenses')
-      .select('trip_id, amount')
-      .eq('household_id', household.id)
-      .not('trip_id', 'is', null)
-    if (expenseError) {
-      writeCache(cacheKeyFor(household.id), { trips: data ?? [], totals })
-      return
-    }
-
-    const sums = {}
-    for (const e of expenseData ?? []) {
-      sums[e.trip_id] = (sums[e.trip_id] ?? 0) + Number(e.amount)
-    }
-    setTotals(sums)
-    writeCache(cacheKeyFor(household.id), { trips: data ?? [], totals: sums })
-  }
-
-  useEffect(() => {
-    loadTrips()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household])
 
   async function handleCreate(e) {
     e.preventDefault()
@@ -93,7 +63,7 @@ export default function Trips() {
 
     // Queued: nothing else to do here — it's already in the offline queue,
     // so it shows up via useRowsWithPending until a real fetch reconciles it.
-    if (!queued) loadTrips()
+    if (!queued) refreshTrips()
   }
 
   return (

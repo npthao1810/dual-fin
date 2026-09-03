@@ -25,20 +25,33 @@ const CATEGORY_CHART_COLORS = [
 
 export default function Charts() {
   const { household } = useHousehold()
+  // One fetch/cache/realtime subscription for every household expense ever
+  // (the same "all expenses" cache History already warms) instead of three
+  // separate overlapping range queries — each chart below just filters this
+  // client-side.
+  const { expenses: allExpenses } = useExpensesWithPending()
+
   const { start, end } = currentMonthRange()
-  const { expenses: monthExpenses } = useExpensesWithPending({ startDate: start, endDate: end })
+  const monthExpenses = useMemo(
+    () => allExpenses.filter((e) => e.date >= start && e.date <= end),
+    [allExpenses, start, end]
+  )
 
   const thirtyDaysAgo = useMemo(
     () => toISODate(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000)),
     []
   )
-  const { expenses: recentExpenses } = useExpensesWithPending({ startDate: thirtyDaysAgo })
+  const recentExpenses = useMemo(
+    () => allExpenses.filter((e) => e.date >= thirtyDaysAgo),
+    [allExpenses, thirtyDaysAgo]
+  )
 
   const dailyIncome = household?.daily_income != null ? Number(household.daily_income) : null
   const budgetStartDate = household?.budget_start_date ?? null
   const today = toISODate(new Date())
-  const { expenses: allExpenses } = useExpensesWithPending(
-    budgetStartDate ? { startDate: budgetStartDate, endDate: today } : {}
+  const budgetRangeExpenses = useMemo(
+    () => (budgetStartDate ? allExpenses.filter((e) => e.date >= budgetStartDate && e.date <= today) : allExpenses),
+    [allExpenses, budgetStartDate, today]
   )
 
   const pieData = Object.values(
@@ -73,7 +86,7 @@ export default function Charts() {
       if (rangeStart <= rangeEnd) {
         const days = daysBetweenInclusive(rangeStart, rangeEnd)
         const budget = dailyIncome * days
-        const expense = allExpenses
+        const expense = budgetRangeExpenses
           .filter((e) => !e.trip_id && e.date >= rangeStart && e.date <= rangeEnd)
           .reduce((sum, e) => sum + Number(e.amount), 0)
         const label = new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })

@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
-import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
 import { useBudgets } from '../hooks/useBudgets'
+import { useTrips } from '../hooks/useTrips'
 import { daysBetweenInclusive, firstOfMonth, formatCurrency, monthRange, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 
@@ -58,16 +58,7 @@ export default function Dashboard() {
   const budgetStartDate = household?.budget_start_date ?? null
   const currentMonth = firstOfMonth()
   const { expenses, loading } = useExpensesWithPending({ startDate: budgetStartDate, endDate: today })
-
-  const [trips, setTrips] = useState([])
-  useEffect(() => {
-    if (!household) return
-    supabase
-      .from('trips')
-      .select('id, name, icon, budget')
-      .eq('household_id', household.id)
-      .then(({ data }) => setTrips(data ?? []))
-  }, [household])
+  const { trips } = useTrips()
 
   const [selectedPeriod, setSelectedPeriod] = useState(currentMonth)
   const [selectedDay, setSelectedDay] = useState(null)

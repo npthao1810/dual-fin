@@ -1,23 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Layout from '../components/Layout'
-import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
 import { useRowsWithPending } from '../hooks/useRowsWithPending'
+import { useTrips } from '../hooks/useTrips'
 import { currencySymbol, formatCurrency, formatForeign } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
-import { readCache } from '../lib/localCache'
 import { mutateOrQueue } from '../lib/mutate'
 
 export default function TripDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { household } = useHousehold()
-  const [baseTrips, setBaseTrips] = useState(() => {
-    const cached = household && readCache(`trips:${household.id}`)
-    return cached?.trips ?? []
-  })
+  const { trips: baseTrips, refresh: refreshTrips } = useTrips()
   const trip =
     useRowsWithPending(baseTrips, 'trips', household ? { household_id: household.id } : null).find(
       (t) => t.id === id
@@ -26,21 +22,6 @@ export default function TripDetail() {
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const { expenses, loading } = useExpensesWithPending({ tripId: id })
-
-  function refreshTrip() {
-    supabase
-      .from('trips')
-      .select('*')
-      .eq('id', id)
-      .single()
-      .then(({ data }) => {
-        // Keep showing the cached/previous trip if this fetch failed (e.g. offline).
-        if (!data) return
-        setBaseTrips((prev) => [...prev.filter((t) => t.id !== id), data])
-      })
-  }
-
-  useEffect(refreshTrip, [id])
 
   async function handleUpdateCurrency(field, value) {
     const trimmed = value.trim()
@@ -51,14 +32,14 @@ export default function TripDetail() {
     // Queued: the pending overlay (useRowsWithPending) shows it immediately.
     // Not queued: it's already live, so pull the real row to replace baseTrips.
     const { queued } = await mutateOrQueue({ table: 'trips', op: 'update', match: { id }, payload: updates })
-    if (!queued) refreshTrip()
+    if (!queued) refreshTrips()
   }
 
   async function handleUpdateIcon(value) {
     const trimmed = value.trim()
     if (trimmed === (trip.icon ?? '')) return
     const { queued } = await mutateOrQueue({ table: 'trips', op: 'update', match: { id }, payload: { icon: trimmed || null } })
-    if (!queued) refreshTrip()
+    if (!queued) refreshTrips()
   }
 
   async function handleDeleteTrip() {

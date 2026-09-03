@@ -8,13 +8,13 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setLoading(false)
-    })
-
+    // onAuthStateChange fires an INITIAL_SESSION event as soon as it resolves
+    // the current session — internally the exact same lookup getSession()
+    // does — so a separate getSession() call here was just duplicating that
+    // work on every mount for no benefit.
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession)
+      setLoading(false)
     })
 
     return () => listener.subscription.unsubscribe()

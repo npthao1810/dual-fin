@@ -9,9 +9,10 @@ import { currencySymbol, formatCurrency, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 import { mutateOrQueue } from '../lib/mutate'
 import { getQueue } from '../lib/offlineQueue'
-import { readCache, writeCache } from '../lib/localCache'
+import { readCache } from '../lib/localCache'
 import { expensesCacheKey } from '../hooks/useExpenses'
 import { useRowsWithPending } from '../hooks/useRowsWithPending'
+import { useTrips } from '../hooks/useTrips'
 
 const FOR_OPTIONS = [
   { value: 'anh', label: 'Anh', icon: '/icons/nav/anh.png' },
@@ -61,16 +62,15 @@ export default function AddExpense() {
   const [emChi, setEmChi] = useState(() => draft?.emChi ?? false)
   const [tripId, setTripId] = useState(() => draft?.tripId ?? presetTripId)
   const [date, setDate] = useState(() => draft?.date ?? toISODate(new Date()))
-  const [baseTrips, setBaseTrips] = useState(() => {
-    const cached = household && readCache(`trips:${household.id}`)
-    const base = cached?.trips ?? []
-    // Arriving from "+ Add expense to this trip" already carries the trip
-    // (currency included) — use it immediately so the currency symbol
-    // doesn't flash in late once the full trips list has been (re)fetched.
-    const fromNav = location.state?.trip
-    if (!fromNav) return base
-    return [fromNav, ...base.filter((t) => t.id !== fromNav.id)]
-  })
+  const { trips: tripsFromHook } = useTrips()
+  // Arriving from "+ Add expense to this trip" already carries the trip
+  // (currency included) — use it immediately so the currency symbol doesn't
+  // flash in late while useTrips' own fetch/cache is still catching up.
+  const fromNavTrip = location.state?.trip
+  const baseTrips =
+    fromNavTrip && !tripsFromHook.some((t) => t.id === fromNavTrip.id)
+      ? [fromNavTrip, ...tripsFromHook]
+      : tripsFromHook
   const trips = useRowsWithPending(baseTrips, 'trips', household ? { household_id: household.id } : null)
   const [recentCategoryIds, setRecentCategoryIds] = useState([])
   const [submitting, setSubmitting] = useState(false)
@@ -122,21 +122,6 @@ export default function AddExpense() {
 
   useEffect(() => {
     if (!household) return
-    // Keep showing cached/queued trips if this fetch fails (e.g. offline).
-    supabase
-      .from('trips')
-      .select('id, name, currency, exchange_rate, start_date, end_date')
-      .eq('household_id', household.id)
-      .order('start_date', { ascending: false })
-      .then(({ data }) => {
-        if (!data) return
-        setBaseTrips(data)
-        // Keep the shared trips cache warm too, so the next visit here (or to
-        // Trips/TripDetail) doesn't have to wait on a fetch to know currencies.
-        const key = `trips:${household.id}`
-        writeCache(key, { trips: data, totals: readCache(key)?.totals ?? {} })
-      })
-
     supabase
       .from('expenses')
       .select('category_id')
