@@ -7,6 +7,8 @@ import { useHousehold } from '../context/HouseholdContext'
 import { currencySymbol, formatCurrency } from '../lib/format'
 import { readCache, writeCache } from '../lib/localCache'
 import { mutateOrQueue } from '../lib/mutate'
+import { removeFromQueue } from '../lib/offlineQueue'
+import { useRowsWithPending } from '../hooks/useRowsWithPending'
 
 function cacheKeyFor(householdId) {
   return `trips:${householdId}`
@@ -17,6 +19,7 @@ export default function Trips() {
   const cached = household ? readCache(cacheKeyFor(household.id)) : null
   const [trips, setTrips] = useState(() => cached?.trips ?? [])
   const [totals, setTotals] = useState(() => cached?.totals ?? {})
+  const displayTrips = useRowsWithPending(trips, 'trips', household ? { household_id: household.id } : null)
   const [showForm, setShowForm] = useState(false)
   const [icon, setIcon] = useState('')
   const [name, setName] = useState('')
@@ -88,14 +91,9 @@ export default function Trips() {
     setShowForm(false)
     setSaving(false)
 
-    if (queued) {
-      // Offline: show it right away — a live fetch will reconcile once we're back online.
-      const updatedTrips = [newTrip, ...trips]
-      setTrips(updatedTrips)
-      writeCache(cacheKeyFor(household.id), { trips: updatedTrips, totals })
-      return
-    }
-    loadTrips()
+    // Queued: nothing else to do here — it's already in the offline queue,
+    // so it shows up via useRowsWithPending until a real fetch reconciles it.
+    if (!queued) loadTrips()
   }
 
   return (
@@ -185,28 +183,57 @@ export default function Trips() {
       )}
 
       <ul className="space-y-2">
-        {trips.map((t) => {
+        {displayTrips.map((t) => {
           const spent = totals[t.id] ?? 0
+          const content = (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-stone-700">{t.icon || '✈️'} {t.name}</span>
+                <span className="font-bold text-stone-800">{formatCurrency(spent)}</span>
+              </div>
+              <p className="mt-1 text-xs font-semibold text-stone-400">
+                {t.start_date ?? '—'} to {t.end_date ?? '—'}
+                {t.budget ? ` · budget ${formatCurrency(t.budget)}` : ''}
+                {t.currency ? ` · 1 ${currencySymbol(t.currency)} = ${t.exchange_rate ?? '?'} ₫` : ''}
+              </p>
+              {t.pending && t.status === 'pending' && (
+                <p className="mt-1 text-xs font-bold text-amber-500">🔄 Pending sync</p>
+              )}
+              {t.pending && t.status === 'error' && (
+                <p className="mt-1 text-xs font-bold text-rose-500">⚠️ Couldn't sync: {t.errorMessage}</p>
+              )}
+            </>
+          )
+
           return (
             <li key={t.id}>
-              <Link
-                to={`/trips/${t.id}`}
-                className="block rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-stone-700">{t.icon || '✈️'} {t.name}</span>
-                  <span className="font-bold text-stone-800">{formatCurrency(spent)}</span>
+              {t.pending ? (
+                <div className="flex items-center gap-2 rounded-2xl border border-dashed border-amber-200 bg-white/70 p-3 opacity-80">
+                  <Link to={`/trips/${t.id}`} className="flex-1">
+                    {content}
+                  </Link>
+                  {t.status === 'error' && (
+                    <button
+                      type="button"
+                      onClick={() => removeFromQueue(t.queueId)}
+                      className="text-xs font-bold text-stone-400"
+                    >
+                      Discard
+                    </button>
+                  )}
                 </div>
-                <p className="mt-1 text-xs font-semibold text-stone-400">
-                  {t.start_date ?? '—'} to {t.end_date ?? '—'}
-                  {t.budget ? ` · budget ${formatCurrency(t.budget)}` : ''}
-                  {t.currency ? ` · 1 ${currencySymbol(t.currency)} = ${t.exchange_rate ?? '?'} ₫` : ''}
-                </p>
-              </Link>
+              ) : (
+                <Link
+                  to={`/trips/${t.id}`}
+                  className="block rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
+                >
+                  {content}
+                </Link>
+              )}
             </li>
           )
         })}
-        {trips.length === 0 && <p className="text-sm text-stone-400">No trips yet.</p>}
+        {displayTrips.length === 0 && <p className="text-sm text-stone-400">No trips yet.</p>}
       </ul>
     </Layout>
   )

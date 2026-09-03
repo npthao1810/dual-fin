@@ -4,30 +4,30 @@ import Layout from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
+import { useRowsWithPending } from '../hooks/useRowsWithPending'
 import { currencySymbol, formatCurrency, formatForeign } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
-import { readCache, writeCache } from '../lib/localCache'
+import { readCache } from '../lib/localCache'
 import { mutateOrQueue } from '../lib/mutate'
 
 export default function TripDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { household } = useHousehold()
-  const [trip, setTrip] = useState(() => {
+  const [baseTrips, setBaseTrips] = useState(() => {
     const cached = household && readCache(`trips:${household.id}`)
-    return cached?.trips?.find((t) => t.id === id) ?? null
+    return cached?.trips ?? []
   })
+  const trip =
+    useRowsWithPending(baseTrips, 'trips', household ? { household_id: household.id } : null).find(
+      (t) => t.id === id
+    ) ?? null
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const { expenses, loading } = useExpensesWithPending({ tripId: id })
 
-  function loadTrip() {
-    // Switching between trips: show the cached copy immediately, then refresh in the background.
-    const cached = household && readCache(`trips:${household.id}`)
-    const match = cached?.trips?.find((t) => t.id === id)
-    if (match) setTrip(match)
-
+  function refreshTrip() {
     supabase
       .from('trips')
       .select('*')
@@ -35,26 +35,12 @@ export default function TripDetail() {
       .single()
       .then(({ data }) => {
         // Keep showing the cached/previous trip if this fetch failed (e.g. offline).
-        if (data) setTrip(data)
+        if (!data) return
+        setBaseTrips((prev) => [...prev.filter((t) => t.id !== id), data])
       })
   }
 
-  useEffect(loadTrip, [id, household])
-
-  // Applies a trip patch optimistically (state + the trips-list cache) once the
-  // write has actually gone through or been queued — never on a real error.
-  function applyTripPatch(updates) {
-    setTrip((prev) => (prev ? { ...prev, ...updates } : prev))
-    if (household) {
-      const cached = readCache(`trips:${household.id}`)
-      if (cached) {
-        writeCache(`trips:${household.id}`, {
-          ...cached,
-          trips: cached.trips.map((t) => (t.id === id ? { ...t, ...updates } : t)),
-        })
-      }
-    }
-  }
+  useEffect(refreshTrip, [id])
 
   async function handleUpdateCurrency(field, value) {
     const trimmed = value.trim()
@@ -62,20 +48,17 @@ export default function TripDetail() {
     const parsed = field === 'exchange_rate' ? (trimmed ? Number(trimmed) : null) : trimmed.toUpperCase() || null
     const updates = { [field]: parsed }
     if (field === 'currency' && !trimmed) updates.exchange_rate = null
-    const { queued, error } = await mutateOrQueue({ table: 'trips', op: 'update', match: { id }, payload: updates })
-    if (error) return
-    applyTripPatch(updates)
-    if (!queued) loadTrip()
+    // Queued: the pending overlay (useRowsWithPending) shows it immediately.
+    // Not queued: it's already live, so pull the real row to replace baseTrips.
+    const { queued } = await mutateOrQueue({ table: 'trips', op: 'update', match: { id }, payload: updates })
+    if (!queued) refreshTrip()
   }
 
   async function handleUpdateIcon(value) {
     const trimmed = value.trim()
     if (trimmed === (trip.icon ?? '')) return
-    const updates = { icon: trimmed || null }
-    const { queued, error } = await mutateOrQueue({ table: 'trips', op: 'update', match: { id }, payload: updates })
-    if (error) return
-    applyTripPatch(updates)
-    if (!queued) loadTrip()
+    const { queued } = await mutateOrQueue({ table: 'trips', op: 'update', match: { id }, payload: { icon: trimmed || null } })
+    if (!queued) refreshTrip()
   }
 
   async function handleDeleteTrip() {
@@ -86,12 +69,6 @@ export default function TripDetail() {
     if (error) {
       setDeleteError(error.message)
       return
-    }
-    if (household) {
-      const cached = readCache(`trips:${household.id}`)
-      if (cached) {
-        writeCache(`trips:${household.id}`, { ...cached, trips: cached.trips.filter((t) => t.id !== id) })
-      }
     }
     navigate('/trips')
   }
@@ -119,6 +96,12 @@ export default function TripDetail() {
   return (
     <Layout title={`${trip.icon || '✈️'} ${trip.name}`}>
       <section className="mb-6 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
+        {trip.pending && trip.status === 'pending' && (
+          <p className="mb-2 text-xs font-bold text-amber-500">🔄 Pending sync</p>
+        )}
+        {trip.pending && trip.status === 'error' && (
+          <p className="mb-2 text-xs font-bold text-rose-500">⚠️ Couldn't sync: {trip.errorMessage}</p>
+        )}
         <p className="text-sm font-semibold text-stone-400">Total spent</p>
         <p className="mt-1 text-3xl font-bold text-stone-800">{formatCurrency(total)}</p>
         {trip.budget && (
