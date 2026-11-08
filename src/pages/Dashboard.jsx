@@ -4,7 +4,7 @@ import Layout from '../components/Layout'
 import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
 import { useMonthlyBudget } from '../hooks/useMonthlyBudget'
-import { firstOfMonth, formatCurrency, monthRange, toISODate } from '../lib/format'
+import { daysBetweenInclusive, firstOfMonth, formatCurrency, monthRange, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 
 function monthLabel(monthStart) {
@@ -16,7 +16,10 @@ function buildMonthOptions(startDate) {
   const first = startDate ? firstOfMonth(new Date(`${startDate}T00:00:00`)) : firstOfMonth()
   const [startYear, startMonth] = first.split('-').map(Number)
   const now = new Date()
-  const options = []
+  const sinceLabel = startDate
+    ? `Since ${new Date(`${startDate}T00:00:00`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`
+    : 'Since tracking started'
+  const options = [{ value: 'so_far', label: sinceLabel }]
   let year = now.getFullYear()
   let month = now.getMonth() + 1
   while (year > startYear || (year === startYear && month >= startMonth)) {
@@ -35,7 +38,7 @@ function typeFor(expense) {
   return expense.expense_type ?? (expense.trip_id ? 'trip' : 'daily')
 }
 
-function BudgetCard({ icon, title, spent, limit, tone }) {
+function BudgetCard({ icon, title, spent, limit, tone, cumulative = false }) {
   const remaining = limit - spent
   const percent = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0
   const barColor = tone === 'trip' ? 'bg-orange-400' : 'bg-pink-500'
@@ -46,11 +49,13 @@ function BudgetCard({ icon, title, spent, limit, tone }) {
         <p className="text-sm font-bold text-stone-700">{icon} {title}</p>
         <p className="text-sm font-bold text-stone-800">{formatCurrency(spent)}</p>
       </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
-        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${percent}%` }} />
-      </div>
+      {!cumulative && (
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${percent}%` }} />
+        </div>
+      )}
       <div className="mt-1 flex justify-between text-[11px] font-semibold text-stone-400">
-        <span>{limit > 0 ? `${percent}% of ${formatCurrency(limit)}` : 'Set a budget in Settings'}</span>
+        <span>{cumulative ? 'Cumulative spend' : limit > 0 ? `${percent}% of ${formatCurrency(limit)}` : 'Set a budget in Settings'}</span>
         {limit > 0 && (
           <span className={remaining < 0 ? 'text-rose-500' : ''}>
             {remaining < 0 ? `${formatCurrency(Math.abs(remaining))} over` : `${formatCurrency(remaining)} left`}
@@ -66,22 +71,24 @@ export default function Dashboard() {
   const today = toISODate(new Date())
   const currentMonth = firstOfMonth()
   const monthOptions = buildMonthOptions(household?.budget_start_date)
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  const [selectedPeriod, setSelectedPeriod] = useState('so_far')
   const [expenseFilter, setExpenseFilter] = useState('all')
   const [selectedDay, setSelectedDay] = useState(null)
-  const [year, month] = selectedMonth.split('-').map(Number)
+  const isSoFar = selectedPeriod === 'so_far'
+  const [year, month] = isSoFar ? [new Date().getFullYear(), new Date().getMonth() + 1] : selectedPeriod.split('-').map(Number)
   const range = monthRange(year, month)
-  const periodEnd = range.end > today ? today : range.end
-  const { expenses, loading } = useExpensesWithPending({ startDate: range.start, endDate: periodEnd })
-  const { budget } = useMonthlyBudget(selectedMonth)
+  const periodStart = isSoFar ? household?.budget_start_date : range.start
+  const periodEnd = isSoFar || range.end > today ? today : range.end
+  const { expenses, loading } = useExpensesWithPending({ startDate: periodStart, endDate: periodEnd })
+  const { budget } = useMonthlyBudget(isSoFar ? currentMonth : selectedPeriod)
 
   const dailyExpenses = expenses.filter((expense) => typeFor(expense) === 'daily')
   const tripExpenses = expenses.filter((expense) => typeFor(expense) === 'trip')
   const dailySpent = dailyExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
   const tripSpent = tripExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
   const totalSpent = dailySpent + tripSpent
-  const dailyLimit = Number(budget?.daily_limit) || 0
-  const tripLimit = Number(budget?.trip_limit) || 0
+  const dailyLimit = isSoFar ? 0 : Number(budget?.daily_limit) || 0
+  const tripLimit = isSoFar ? 0 : Number(budget?.trip_limit) || 0
   const totalLimit = dailyLimit + tripLimit
   const totalRemaining = totalLimit - totalSpent
   const totalPercent = totalLimit > 0 ? Math.min(100, Math.round((totalSpent / totalLimit) * 100)) : 0
@@ -119,7 +126,7 @@ export default function Dashboard() {
     { anh: 0, em: 0 }
   )
 
-  const daysElapsed = selectedMonth === currentMonth ? new Date().getDate() : new Date(year, month, 0).getDate()
+  const daysElapsed = periodStart ? daysBetweenInclusive(periodStart, periodEnd) : 0
   const incomeToDate = household?.daily_income != null ? Number(household.daily_income) * daysElapsed : null
   const actualSavings = incomeToDate != null ? incomeToDate - totalSpent : null
 
@@ -127,9 +134,9 @@ export default function Dashboard() {
     <Layout
       title={
         <select
-          value={selectedMonth}
-          onChange={(event) => setSelectedMonth(event.target.value)}
-          aria-label="Month"
+          value={selectedPeriod}
+          onChange={(event) => setSelectedPeriod(event.target.value)}
+          aria-label="Time period"
           className="font-heading -ml-1 rounded-lg border-none bg-transparent py-0.5 pl-1 text-lg font-bold text-stone-800 outline-none"
         >
           {monthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -152,6 +159,8 @@ export default function Dashboard() {
               </span>
             </div>
           </>
+        ) : isSoFar ? (
+          <p className="mt-3 text-xs font-semibold text-stone-300">Cumulative Daily + Trip spending</p>
         ) : (
           <Link to="/settings" className="mt-3 inline-block text-xs font-bold text-pink-300">Set this month’s budgets →</Link>
         )}
@@ -164,8 +173,8 @@ export default function Dashboard() {
       </section>
 
       <section className="mb-5 grid gap-3">
-        <BudgetCard icon="🏠" title="Daily" spent={dailySpent} limit={dailyLimit} tone="daily" />
-        <BudgetCard icon="✈️" title="Trip" spent={tripSpent} limit={tripLimit} tone="trip" />
+        <BudgetCard icon="🏠" title="Daily" spent={dailySpent} limit={dailyLimit} tone="daily" cumulative={isSoFar} />
+        <BudgetCard icon="✈️" title="Trip" spent={tripSpent} limit={tripLimit} tone="trip" cumulative={isSoFar} />
       </section>
 
       {dailySpend.length > 0 && (
@@ -216,7 +225,7 @@ export default function Dashboard() {
               <span className="font-bold text-stone-800">{formatCurrency(total)}</span>
             </li>
           ))}
-          {!loading && categoryRows.length === 0 && <p className="text-sm text-stone-400">No expenses for this month.</p>}
+          {!loading && categoryRows.length === 0 && <p className="text-sm text-stone-400">No expenses for this period.</p>}
         </ul>
       </section>
 
