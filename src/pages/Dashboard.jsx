@@ -72,7 +72,7 @@ export default function Dashboard() {
   const currentMonth = firstOfMonth()
   const monthOptions = buildMonthOptions(household?.budget_start_date)
   const [selectedPeriod, setSelectedPeriod] = useState('so_far')
-  const [expenseFilter, setExpenseFilter] = useState('all')
+  const [activeTab, setActiveTab] = useState('overall')
   const [selectedDay, setSelectedDay] = useState(null)
   const isSoFar = selectedPeriod === 'so_far'
   const [year, month] = isSoFar ? [new Date().getFullYear(), new Date().getMonth() + 1] : selectedPeriod.split('-').map(Number)
@@ -94,9 +94,15 @@ export default function Dashboard() {
   const totalPercent = totalLimit > 0 ? Math.min(100, Math.round((totalSpent / totalLimit) * 100)) : 0
   const pendingCount = expenses.filter((expense) => expense.pending).length
 
-  const visibleExpenses = expenseFilter === 'all'
+  const visibleExpenses = activeTab === 'overall'
     ? expenses
-    : expenses.filter((expense) => typeFor(expense) === expenseFilter)
+    : expenses.filter((expense) => typeFor(expense) === activeTab)
+  const focusedSpent = activeTab === 'daily' ? dailySpent : tripSpent
+  const focusedLimit = activeTab === 'daily' ? dailyLimit : tripLimit
+  const focusedRemaining = focusedLimit - focusedSpent
+  const focusedPercent = focusedLimit > 0 ? Math.min(100, Math.round((focusedSpent / focusedLimit) * 100)) : 0
+  const focusedLabel = activeTab === 'daily' ? 'Daily' : 'Trip'
+  const visiblePendingCount = visibleExpenses.filter((expense) => expense.pending).length
 
   const categoryRows = useMemo(() => {
     const grouped = {}
@@ -110,15 +116,15 @@ export default function Dashboard() {
 
   const dailySpend = useMemo(() => {
     const grouped = {}
-    for (const expense of expenses) grouped[expense.date] = (grouped[expense.date] ?? 0) + Number(expense.amount)
+    for (const expense of visibleExpenses) grouped[expense.date] = (grouped[expense.date] ?? 0) + Number(expense.amount)
     return Object.entries(grouped)
       .map(([date, total]) => ({ date, total }))
       .sort((a, b) => a.date.localeCompare(b.date))
-  }, [expenses])
+  }, [visibleExpenses])
   const maxDaily = Math.max(1, ...dailySpend.map((item) => item.total))
   const selectedDaySpend = dailySpend.find((item) => item.date === selectedDay)
 
-  const paidBy = expenses.reduce(
+  const paidBy = visibleExpenses.reduce(
     (totals, expense) => {
       totals[expense.em_chi ? 'em' : 'anh'] += Number(expense.amount)
       return totals
@@ -143,44 +149,95 @@ export default function Dashboard() {
         </select>
       }
     >
-      <section className="mb-5 rounded-3xl bg-gradient-to-br from-stone-800 to-stone-700 p-5 text-white shadow-lg shadow-stone-200">
-        <p className="text-sm font-semibold text-stone-300">Total expense</p>
-        <p className="mt-1 text-3xl font-bold">{formatCurrency(totalSpent)}</p>
-        {pendingCount > 0 && <p className="mt-1 text-xs font-semibold text-amber-300">Includes {pendingCount} pending sync</p>}
-        {totalLimit > 0 ? (
-          <>
-            <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/20">
-              <div className="h-full rounded-full bg-pink-400" style={{ width: `${totalPercent}%` }} />
-            </div>
-            <div className="mt-2 flex items-center justify-between text-xs font-semibold text-stone-300">
-              <span>{totalPercent}% of {formatCurrency(totalLimit)}</span>
-              <span className={totalRemaining < 0 ? 'text-rose-300' : 'text-white'}>
-                {totalRemaining < 0 ? `${formatCurrency(Math.abs(totalRemaining))} over` : `${formatCurrency(totalRemaining)} remaining`}
-              </span>
-            </div>
-          </>
-        ) : isSoFar ? (
-          <p className="mt-3 text-xs font-semibold text-stone-300">Cumulative Daily + Trip spending</p>
-        ) : (
-          <Link to="/settings" className="mt-3 inline-block text-xs font-bold text-pink-300">Set this month’s budgets →</Link>
-        )}
-        {actualSavings != null && (
-          <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
-            <span className="text-sm font-semibold text-stone-300">Actual savings</span>
-            <span className={`text-lg font-bold ${actualSavings < 0 ? 'text-rose-300' : 'text-white'}`}>{formatCurrency(actualSavings)}</span>
-          </div>
-        )}
-      </section>
+      <div role="tablist" aria-label="Expense view" className="mb-5 grid grid-cols-3 rounded-2xl bg-white p-1 shadow-sm shadow-pink-100">
+        {[
+          { value: 'overall', label: 'Overall', icon: '✨' },
+          { value: 'daily', label: 'Daily', icon: '🏠' },
+          { value: 'trip', label: 'Trip', icon: '✈️' },
+        ].map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.value}
+            onClick={() => {
+              setActiveTab(tab.value)
+              setSelectedDay(null)
+            }}
+            className={`rounded-xl px-2 py-2 text-sm font-bold transition ${
+              activeTab === tab.value ? 'bg-stone-800 text-white shadow-sm' : 'text-stone-400'
+            }`}
+          >
+            <span aria-hidden="true">{tab.icon}</span> {tab.label}
+          </button>
+        ))}
+      </div>
 
-      <section className="mb-5 grid gap-3">
-        <BudgetCard icon="🏠" title="Daily" spent={dailySpent} limit={dailyLimit} tone="daily" cumulative={isSoFar} />
-        <BudgetCard icon="✈️" title="Trip" spent={tripSpent} limit={tripLimit} tone="trip" cumulative={isSoFar} />
-      </section>
+      {activeTab === 'overall' ? (
+        <>
+          <section className="mb-5 rounded-3xl bg-gradient-to-br from-stone-800 to-stone-700 p-5 text-white shadow-lg shadow-stone-200">
+            <p className="text-sm font-semibold text-stone-300">Total expense</p>
+            <p className="mt-1 text-3xl font-bold">{formatCurrency(totalSpent)}</p>
+            {pendingCount > 0 && <p className="mt-1 text-xs font-semibold text-amber-300">Includes {pendingCount} pending sync</p>}
+            {totalLimit > 0 ? (
+              <>
+                <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/20">
+                  <div className="h-full rounded-full bg-pink-400" style={{ width: `${totalPercent}%` }} />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-xs font-semibold text-stone-300">
+                  <span>{totalPercent}% of {formatCurrency(totalLimit)}</span>
+                  <span className={totalRemaining < 0 ? 'text-rose-300' : 'text-white'}>
+                    {totalRemaining < 0 ? `${formatCurrency(Math.abs(totalRemaining))} over` : `${formatCurrency(totalRemaining)} remaining`}
+                  </span>
+                </div>
+              </>
+            ) : isSoFar ? (
+              <p className="mt-3 text-xs font-semibold text-stone-300">Cumulative Daily + Trip spending</p>
+            ) : (
+              <Link to="/settings" className="mt-3 inline-block text-xs font-bold text-pink-300">Set this month’s budgets →</Link>
+            )}
+            {actualSavings != null && (
+              <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
+                <span className="text-sm font-semibold text-stone-300">Actual savings</span>
+                <span className={`text-lg font-bold ${actualSavings < 0 ? 'text-rose-300' : 'text-white'}`}>{formatCurrency(actualSavings)}</span>
+              </div>
+            )}
+          </section>
+
+          <section className="mb-5 grid gap-3">
+            <BudgetCard icon="🏠" title="Daily" spent={dailySpent} limit={dailyLimit} tone="daily" cumulative={isSoFar} />
+            <BudgetCard icon="✈️" title="Trip" spent={tripSpent} limit={tripLimit} tone="trip" cumulative={isSoFar} />
+          </section>
+        </>
+      ) : (
+        <section className={`mb-5 rounded-3xl p-5 shadow-lg ${activeTab === 'trip' ? 'bg-gradient-to-br from-orange-500 to-orange-400 text-white shadow-orange-100' : 'bg-gradient-to-br from-pink-600 to-pink-500 text-white shadow-pink-100'}`}>
+          <p className="text-sm font-semibold text-white/75">{focusedLabel} expense</p>
+          <p className="mt-1 text-3xl font-bold">{formatCurrency(focusedSpent)}</p>
+          {visiblePendingCount > 0 && <p className="mt-1 text-xs font-semibold text-amber-100">Includes {visiblePendingCount} pending sync</p>}
+          {focusedLimit > 0 ? (
+            <>
+              <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/25">
+                <div className="h-full rounded-full bg-white" style={{ width: `${focusedPercent}%` }} />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-xs font-semibold text-white/80">
+                <span>{focusedPercent}% of {formatCurrency(focusedLimit)}</span>
+                <span className={focusedRemaining < 0 ? 'text-red-100' : 'text-white'}>
+                  {focusedRemaining < 0 ? `${formatCurrency(Math.abs(focusedRemaining))} over` : `${formatCurrency(focusedRemaining)} remaining`}
+                </span>
+              </div>
+            </>
+          ) : isSoFar ? (
+            <p className="mt-3 text-xs font-semibold text-white/75">Cumulative {focusedLabel.toLowerCase()} spending</p>
+          ) : (
+            <Link to="/settings" className="mt-3 inline-block text-xs font-bold text-white">Set this month’s budget →</Link>
+          )}
+        </section>
+      )}
 
       {dailySpend.length > 0 && (
         <section className="mb-5 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-stone-500">Total spending by day</h2>
+            <h2 className="text-sm font-semibold text-stone-500">{activeTab === 'overall' ? 'Total' : focusedLabel} spending by day</h2>
             <span className="text-xs font-bold text-stone-400">
               {selectedDaySpend ? `${selectedDaySpend.date.slice(5)} · ${formatCurrency(selectedDaySpend.total)}` : 'Tap a bar'}
             </span>
@@ -201,21 +258,7 @@ export default function Dashboard() {
       )}
 
       <section className="mb-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-stone-500">By category</h2>
-          <div className="flex rounded-full bg-stone-100 p-1 text-xs font-bold">
-            {['all', 'daily', 'trip'].map((filter) => (
-              <button
-                key={filter}
-                type="button"
-                onClick={() => setExpenseFilter(filter)}
-                className={`rounded-full px-2.5 py-1 capitalize ${expenseFilter === filter ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-400'}`}
-              >
-                {filter}
-              </button>
-            ))}
-          </div>
-        </div>
+        <h2 className="mb-3 text-sm font-semibold text-stone-500">{activeTab === 'overall' ? 'All expenses' : focusedLabel} by category</h2>
         <ul className="space-y-2">
           {categoryRows.map(({ category, total }) => (
             <li key={category?.id ?? 'uncategorized'} className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
@@ -230,7 +273,7 @@ export default function Dashboard() {
       </section>
 
       <section className="mb-5 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
-        <h2 className="mb-3 text-sm font-semibold text-stone-500">Paid by · total expenses</h2>
+        <h2 className="mb-3 text-sm font-semibold text-stone-500">Paid by · {activeTab === 'overall' ? 'total expenses' : `${focusedLabel.toLowerCase()} expenses`}</h2>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-pink-50 p-3 text-center">
             <p className="text-xs font-semibold text-stone-400">Anh chi</p>
