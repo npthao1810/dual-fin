@@ -56,7 +56,6 @@ export default function Charts() {
 
   const pieData = Object.values(
     monthExpenses
-      .filter((e) => !e.trip_id)
       .reduce((acc, e) => {
         const key = e.categories?.name ?? 'Uncategorized'
         if (!acc[key]) acc[key] = { name: key, value: 0 }
@@ -87,7 +86,7 @@ export default function Charts() {
         const days = daysBetweenInclusive(rangeStart, rangeEnd)
         const budget = dailyIncome * days
         const expense = budgetRangeExpenses
-          .filter((e) => !e.trip_id && e.date >= rangeStart && e.date <= rangeEnd)
+          .filter((e) => e.date >= rangeStart && e.date <= rangeEnd)
           .reduce((sum, e) => sum + Number(e.amount), 0)
         const label = new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
         monthlyStats.push({ label, budget, expense, savings: budget - expense })
@@ -110,7 +109,7 @@ export default function Charts() {
   return (
     <Layout title="Charts">
       <section className="mb-8 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
-        <h2 className="mb-2 text-sm font-semibold text-stone-500">Spend by category (this month)</h2>
+        <h2 className="mb-2 text-sm font-semibold text-stone-500">Total spend by category (this month)</h2>
         {pieData.length === 0 ? (
           <p className="text-sm text-stone-400">No data yet.</p>
         ) : (
@@ -128,7 +127,7 @@ export default function Charts() {
       </section>
 
       <section className="mb-8 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
-        <h2 className="mb-2 text-sm font-semibold text-stone-500">Spend over time (last 30 days)</h2>
+        <h2 className="mb-2 text-sm font-semibold text-stone-500">Total spend over time (last 30 days)</h2>
         {dailyTotals.length === 0 ? (
           <p className="text-sm text-stone-400">No data yet.</p>
         ) : (

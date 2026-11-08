@@ -42,15 +42,17 @@ export default function History() {
   const [dateTo, setDateTo] = useState('')
   const [priceMin, setPriceMin] = useState('')
   const [priceMax, setPriceMax] = useState('')
+  const [expenseType, setExpenseType] = useState('all')
 
   const activeFilterCount =
-    (dateFrom ? 1 : 0) + (dateTo ? 1 : 0) + (priceMin ? 1 : 0) + (priceMax ? 1 : 0)
+    (dateFrom ? 1 : 0) + (dateTo ? 1 : 0) + (priceMin ? 1 : 0) + (priceMax ? 1 : 0) + (expenseType !== 'all' ? 1 : 0)
 
   function clearFilters() {
     setDateFrom('')
     setDateTo('')
     setPriceMin('')
     setPriceMax('')
+    setExpenseType('all')
   }
 
   const filtered = expenses.filter((e) => {
@@ -64,6 +66,8 @@ export default function History() {
     if (dateTo && e.date > dateTo) return false
     if (priceMin && Number(e.amount) < Number(priceMin)) return false
     if (priceMax && Number(e.amount) > Number(priceMax)) return false
+    const type = e.expense_type ?? (e.trip_id ? 'trip' : 'daily')
+    if (expenseType !== 'all' && type !== expenseType) return false
     return true
   })
 
@@ -124,6 +128,25 @@ export default function History() {
 
       {filtersOpen && (
         <div className="mb-4 space-y-3 rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
+          <div>
+            <p className="mb-1 text-xs font-semibold text-stone-400">Budget</p>
+            <div className="grid grid-cols-3 gap-2">
+              {['all', 'daily', 'trip'].map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setExpenseType(type)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-bold capitalize ${
+                    expenseType === type
+                      ? 'border-pink-400 bg-pink-100 text-pink-600'
+                      : 'border-stone-200 bg-white text-stone-400'
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+          </div>
           <div>
             <p className="mb-1 text-xs font-semibold text-stone-400">Date range</p>
             <div className="flex items-center gap-2">
@@ -196,6 +219,13 @@ export default function History() {
                         {categoryIcon(e.categories)} {e.note}
                       </p>
                       <p className="flex items-center gap-1 text-xs font-semibold text-stone-400">
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                          (e.expense_type ?? (e.trip_id ? 'trip' : 'daily')) === 'trip'
+                            ? 'bg-orange-100 text-orange-600'
+                            : 'bg-pink-100 text-pink-600'
+                        }`}>
+                          {(e.expense_type ?? (e.trip_id ? 'trip' : 'daily')) === 'trip' ? 'Trip' : 'Daily'}
+                        </span>
                         {e.categories?.name ?? 'Uncategorized'} ·
                         {FOR_ICONS[e.for_whom] && (
                           <img src={FOR_ICONS[e.for_whom]} alt="" className="h-4 w-4" />

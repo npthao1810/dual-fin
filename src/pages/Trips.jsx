@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import ActivityTabs from '../components/ActivityTabs'
 import { useHousehold } from '../context/HouseholdContext'
-import { currencySymbol, formatCurrency } from '../lib/format'
+import { formatCurrency } from '../lib/format'
 import { mutateOrQueue } from '../lib/mutate'
 import { removeFromQueue } from '../lib/offlineQueue'
 import { useRowsWithPending } from '../hooks/useRowsWithPending'
@@ -29,16 +29,12 @@ export default function Trips() {
   const [name, setName] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [budget, setBudget] = useState('')
-  const [currency, setCurrency] = useState('')
-  const [exchangeRate, setExchangeRate] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function handleCreate(e) {
     e.preventDefault()
     if (!name.trim() || !household) return
     setSaving(true)
-    const trimmedCurrency = currency.trim().toUpperCase()
     const newTrip = {
       id: crypto.randomUUID(),
       household_id: household.id,
@@ -46,18 +42,12 @@ export default function Trips() {
       icon: icon.trim() || null,
       start_date: startDate || null,
       end_date: endDate || null,
-      budget: budget || null,
-      currency: trimmedCurrency || null,
-      exchange_rate: trimmedCurrency && exchangeRate ? Number(exchangeRate) : null,
     }
     const { queued } = await mutateOrQueue({ table: 'trips', op: 'insert', payload: newTrip })
     setIcon('')
     setName('')
     setStartDate('')
     setEndDate('')
-    setBudget('')
-    setCurrency('')
-    setExchangeRate('')
     setShowForm(false)
     setSaving(false)
 
@@ -111,36 +101,8 @@ export default function Trips() {
               className="rounded-xl border border-pink-200 bg-white px-2 py-2 text-sm text-stone-700"
             />
           </div>
-          <input
-            type="number"
-            inputMode="decimal"
-            placeholder="Budget in ₫ (optional)"
-            value={budget}
-            onChange={(e) => setBudget(e.target.value)}
-            className="w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="text"
-              placeholder="Currency (e.g. KRW)"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              maxLength={6}
-              className="rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm uppercase text-stone-700 placeholder:text-stone-300 placeholder:normal-case"
-            />
-            <input
-              type="number"
-              inputMode="decimal"
-              step="any"
-              placeholder={currency.trim() ? `1 ${currency.trim().toUpperCase()} = ? ₫` : '1 unit = ? ₫'}
-              value={exchangeRate}
-              onChange={(e) => setExchangeRate(e.target.value)}
-              disabled={!currency.trim()}
-              className="rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300 disabled:opacity-50"
-            />
-          </div>
           <p className="text-xs text-stone-400">
-            Leave currency blank to track this trip in ₫ like normal.
+            Trips are optional labels. Their expenses count against the monthly Trip budget, and currency is selected per expense.
           </p>
           <button
             type="submit"
@@ -163,8 +125,6 @@ export default function Trips() {
               </div>
               <p className="mt-1 text-xs font-semibold text-stone-400">
                 {t.start_date ?? '—'} to {t.end_date ?? '—'}
-                {t.budget ? ` · budget ${formatCurrency(t.budget)}` : ''}
-                {t.currency ? ` · 1 ${currencySymbol(t.currency)} = ${t.exchange_rate ?? '?'} ₫` : ''}
               </p>
               {t.pending && t.status === 'pending' && (
                 <p className="mt-1 text-xs font-bold text-amber-500">🔄 Pending sync</p>

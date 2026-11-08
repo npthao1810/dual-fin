@@ -1,403 +1,240 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
-import { useBudgets } from '../hooks/useBudgets'
-import { useTrips } from '../hooks/useTrips'
-import { daysBetweenInclusive, firstOfMonth, formatCurrency, monthRange, toISODate } from '../lib/format'
+import { useMonthlyBudget } from '../hooks/useMonthlyBudget'
+import { firstOfMonth, formatCurrency, monthRange, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 
-const FOR_LABELS = {
-  anh: { label: 'Anh', icon: '/icons/nav/anh.png' },
-  em: { label: 'Em', icon: '/icons/nav/em.png' },
-  us: { label: 'Us', icon: '/icons/nav/us.png' },
+function monthLabel(monthStart) {
+  const [year, month] = monthStart.split('-').map(Number)
+  return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 }
 
-function monthLabelFor(monthStartISO) {
-  const [y, m, d] = monthStartISO.split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-}
-
-function monthDayLabelFor(iso) {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })
-}
-
-function shortDayLabelFor(iso) {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
-/** "Since <start date>" + one option per month from budgetStartDate's month through the current month, newest first. */
-function buildPeriodOptions(budgetStartDate) {
-  const soFarLabel = budgetStartDate ? `Since ${monthDayLabelFor(budgetStartDate)}` : 'So far'
-  const options = [{ value: 'so_far', label: soFarLabel }]
-  if (!budgetStartDate) return options
-
-  const [startY, startM] = budgetStartDate.split('-').map(Number)
+function buildMonthOptions(startDate) {
+  const first = startDate ? firstOfMonth(new Date(`${startDate}T00:00:00`)) : firstOfMonth()
+  const [startYear, startMonth] = first.split('-').map(Number)
   const now = new Date()
-  let y = now.getFullYear()
-  let m = now.getMonth() + 1
-
-  while (y > startY || (y === startY && m >= startM)) {
-    const value = `${y}-${String(m).padStart(2, '0')}-01`
-    options.push({ value, label: monthLabelFor(value) })
-    m -= 1
-    if (m === 0) {
-      m = 12
-      y -= 1
+  const options = []
+  let year = now.getFullYear()
+  let month = now.getMonth() + 1
+  while (year > startYear || (year === startYear && month >= startMonth)) {
+    const value = `${year}-${String(month).padStart(2, '0')}-01`
+    options.push({ value, label: monthLabel(value) })
+    month -= 1
+    if (month === 0) {
+      month = 12
+      year -= 1
     }
   }
   return options
 }
 
+function typeFor(expense) {
+  return expense.expense_type ?? (expense.trip_id ? 'trip' : 'daily')
+}
+
+function BudgetCard({ icon, title, spent, limit, tone }) {
+  const remaining = limit - spent
+  const percent = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0
+  const barColor = tone === 'trip' ? 'bg-orange-400' : 'bg-pink-500'
+  const cardColor = tone === 'trip' ? 'border-orange-100 bg-orange-50/60' : 'border-pink-100 bg-pink-50/60'
+  return (
+    <div className={`rounded-2xl border p-3 ${cardColor}`}>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-bold text-stone-700">{icon} {title}</p>
+        <p className="text-sm font-bold text-stone-800">{formatCurrency(spent)}</p>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${percent}%` }} />
+      </div>
+      <div className="mt-1 flex justify-between text-[11px] font-semibold text-stone-400">
+        <span>{limit > 0 ? `${percent}% of ${formatCurrency(limit)}` : 'Set a budget in Settings'}</span>
+        {limit > 0 && (
+          <span className={remaining < 0 ? 'text-rose-500' : ''}>
+            {remaining < 0 ? `${formatCurrency(Math.abs(remaining))} over` : `${formatCurrency(remaining)} left`}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const { household } = useHousehold()
   const today = toISODate(new Date())
-  const budgetStartDate = household?.budget_start_date ?? null
   const currentMonth = firstOfMonth()
-  const { expenses, loading } = useExpensesWithPending({ startDate: budgetStartDate, endDate: today })
-  const { trips } = useTrips()
-
-  const [selectedPeriod, setSelectedPeriod] = useState(currentMonth)
+  const monthOptions = buildMonthOptions(household?.budget_start_date)
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  const [expenseFilter, setExpenseFilter] = useState('all')
   const [selectedDay, setSelectedDay] = useState(null)
-  const periodOptions = buildPeriodOptions(budgetStartDate)
-  const selectedLabel = periodOptions.find((o) => o.value === selectedPeriod)?.label ?? 'So far'
+  const [year, month] = selectedMonth.split('-').map(Number)
+  const range = monthRange(year, month)
+  const periodEnd = range.end > today ? today : range.end
+  const { expenses, loading } = useExpensesWithPending({ startDate: range.start, endDate: periodEnd })
+  const { budget } = useMonthlyBudget(selectedMonth)
 
-  const isSoFar = selectedPeriod === 'so_far'
-  const isCurrentMonth = selectedPeriod === currentMonth
-  const showsToday = isSoFar || isCurrentMonth
+  const dailyExpenses = expenses.filter((expense) => typeFor(expense) === 'daily')
+  const tripExpenses = expenses.filter((expense) => typeFor(expense) === 'trip')
+  const dailySpent = dailyExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
+  const tripSpent = tripExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
+  const totalSpent = dailySpent + tripSpent
+  const dailyLimit = Number(budget?.daily_limit) || 0
+  const tripLimit = Number(budget?.trip_limit) || 0
+  const totalLimit = dailyLimit + tripLimit
+  const totalRemaining = totalLimit - totalSpent
+  const totalPercent = totalLimit > 0 ? Math.min(100, Math.round((totalSpent / totalLimit) * 100)) : 0
+  const pendingCount = expenses.filter((expense) => expense.pending).length
 
-  let periodStart, periodEnd
-  if (isSoFar) {
-    periodStart = budgetStartDate
-    periodEnd = today
-  } else {
-    const [y, m] = selectedPeriod.split('-').map(Number)
-    const range = monthRange(y, m)
-    // Clip to the tracking start date for the first (partial) month.
-    periodStart = budgetStartDate && budgetStartDate > range.start ? budgetStartDate : range.start
-    periodEnd = range.end > today ? today : range.end
-  }
+  const visibleExpenses = expenseFilter === 'all'
+    ? expenses
+    : expenses.filter((expense) => typeFor(expense) === expenseFilter)
 
-  const { budgets } = useBudgets(isSoFar ? currentMonth : selectedPeriod)
-  const budgetByCategory = isSoFar ? {} : Object.fromEntries(budgets.map((b) => [b.category_id, b]))
+  const categoryRows = useMemo(() => {
+    const grouped = {}
+    for (const expense of visibleExpenses) {
+      const key = expense.categories?.id ?? 'uncategorized'
+      if (!grouped[key]) grouped[key] = { category: expense.categories, total: 0 }
+      grouped[key].total += Number(expense.amount)
+    }
+    return Object.values(grouped).sort((a, b) => b.total - a.total)
+  }, [visibleExpenses])
 
-  const periodExpenses = expenses.filter(
-    (e) => !e.trip_id && periodStart && e.date >= periodStart && e.date <= periodEnd
+  const dailySpend = useMemo(() => {
+    const grouped = {}
+    for (const expense of expenses) grouped[expense.date] = (grouped[expense.date] ?? 0) + Number(expense.amount)
+    return Object.entries(grouped)
+      .map(([date, total]) => ({ date, total }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }, [expenses])
+  const maxDaily = Math.max(1, ...dailySpend.map((item) => item.total))
+  const selectedDaySpend = dailySpend.find((item) => item.date === selectedDay)
+
+  const paidBy = expenses.reduce(
+    (totals, expense) => {
+      totals[expense.em_chi ? 'em' : 'anh'] += Number(expense.amount)
+      return totals
+    },
+    { anh: 0, em: 0 }
   )
-  const pendingCount = periodExpenses.filter((e) => e.pending).length
-  const totalSpent = periodExpenses.reduce((sum, e) => sum + Number(e.amount), 0)
-  const todaySpent = periodExpenses
-    .filter((e) => e.date === today)
-    .reduce((sum, e) => sum + Number(e.amount), 0)
 
-  const dailyIncome = household?.daily_income != null ? Number(household.daily_income) : null
-  const daysElapsed = periodStart ? daysBetweenInclusive(periodStart, periodEnd) : null
-  const incomeToDate = dailyIncome != null && daysElapsed != null ? dailyIncome * daysElapsed : null
-  const savings = incomeToDate != null ? incomeToDate - totalSpent : null
-
-  const byCategory = {}
-  for (const e of periodExpenses) {
-    const cat = e.categories
-    const key = cat?.id ?? 'uncategorized'
-    if (!byCategory[key]) {
-      byCategory[key] = { category: cat, total: 0 }
-    }
-    byCategory[key].total += Number(e.amount)
-  }
-  const categoryRows = Object.values(byCategory).sort((a, b) => b.total - a.total)
-
-  const tripExpenses = expenses.filter(
-    (e) => e.trip_id && periodStart && e.date >= periodStart && e.date <= periodEnd
-  )
-  const byTrip = {}
-  for (const e of tripExpenses) {
-    if (!byTrip[e.trip_id]) {
-      byTrip[e.trip_id] = { trip: trips.find((t) => t.id === e.trip_id), total: 0 }
-    }
-    byTrip[e.trip_id].total += Number(e.amount)
-  }
-  const tripRows = Object.values(byTrip).sort((a, b) => b.total - a.total)
-  const tripsTotal = tripRows.reduce((sum, r) => sum + r.total, 0)
-  const savingsAfterTrips = savings != null ? savings - tripsTotal : null
-
-  const dailySpend = []
-  if (periodStart) {
-    const byDate = {}
-    for (const e of expenses) {
-      if (e.date < periodStart || e.date > periodEnd) continue
-      byDate[e.date] = (byDate[e.date] ?? 0) + Number(e.amount)
-    }
-    const [sy, sm, sd] = periodStart.split('-').map(Number)
-    const [ey, em, ed] = periodEnd.split('-').map(Number)
-    let cursor = new Date(sy, sm - 1, sd)
-    const end = new Date(ey, em - 1, ed)
-    while (cursor <= end) {
-      const iso = toISODate(cursor)
-      dailySpend.push({ date: iso, total: byDate[iso] ?? 0 })
-      cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)
-    }
-  }
-  const maxDaily = Math.max(1, ...dailySpend.map((d) => d.total))
-  const avgDaily = dailySpend.length
-    ? dailySpend.reduce((sum, d) => sum + d.total, 0) / dailySpend.length
-    : 0
-  const selectedDaySpend = dailySpend.find((d) => d.date === selectedDay) ?? null
-
-  const byPerson = { anh: 0, em: 0, us: 0 }
-  for (const e of periodExpenses) {
-    const key = e.for_whom in byPerson ? e.for_whom : 'us'
-    byPerson[key] += Number(e.amount)
-  }
-
-  const paidBy = { anh: 0, em: 0 }
-  for (const e of periodExpenses) {
-    if (e.em_chi) paidBy.em += Number(e.amount)
-    else paidBy.anh += Number(e.amount)
-  }
+  const daysElapsed = selectedMonth === currentMonth ? new Date().getDate() : new Date(year, month, 0).getDate()
+  const incomeToDate = household?.daily_income != null ? Number(household.daily_income) * daysElapsed : null
+  const actualSavings = incomeToDate != null ? incomeToDate - totalSpent : null
 
   return (
     <Layout
       title={
         <select
-          value={selectedPeriod}
-          onChange={(e) => setSelectedPeriod(e.target.value)}
-          aria-label="Time period"
-          className="font-heading -ml-1 rounded-lg border-none bg-transparent py-0.5 pl-1 pr-1 text-lg font-bold text-stone-800 outline-none"
+          value={selectedMonth}
+          onChange={(event) => setSelectedMonth(event.target.value)}
+          aria-label="Month"
+          className="font-heading -ml-1 rounded-lg border-none bg-transparent py-0.5 pl-1 text-lg font-bold text-stone-800 outline-none"
         >
-          {periodOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
+          {monthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       }
     >
-      <section className="mb-6 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
-        <p className="text-sm font-semibold text-stone-400">Total spent</p>
-        <p className="mt-1 text-3xl font-bold text-stone-800">{formatCurrency(totalSpent)}</p>
-        {pendingCount > 0 && (
-          <p className="mt-0.5 text-xs font-semibold text-amber-500">
-            Includes {pendingCount} not-yet-synced expense{pendingCount > 1 ? 's' : ''}
-          </p>
+      <section className="mb-5 rounded-3xl bg-gradient-to-br from-stone-800 to-stone-700 p-5 text-white shadow-lg shadow-stone-200">
+        <p className="text-sm font-semibold text-stone-300">Total expense</p>
+        <p className="mt-1 text-3xl font-bold">{formatCurrency(totalSpent)}</p>
+        {pendingCount > 0 && <p className="mt-1 text-xs font-semibold text-amber-300">Includes {pendingCount} pending sync</p>}
+        {totalLimit > 0 ? (
+          <>
+            <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/20">
+              <div className="h-full rounded-full bg-pink-400" style={{ width: `${totalPercent}%` }} />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs font-semibold text-stone-300">
+              <span>{totalPercent}% of {formatCurrency(totalLimit)}</span>
+              <span className={totalRemaining < 0 ? 'text-rose-300' : 'text-white'}>
+                {totalRemaining < 0 ? `${formatCurrency(Math.abs(totalRemaining))} over` : `${formatCurrency(totalRemaining)} remaining`}
+              </span>
+            </div>
+          </>
+        ) : (
+          <Link to="/settings" className="mt-3 inline-block text-xs font-bold text-pink-300">Set this month’s budgets →</Link>
         )}
-        {incomeToDate != null && (
-          <div className="mt-3">
-            <BudgetBar spent={totalSpent} limit={incomeToDate} />
-            <p className="mt-1 text-xs font-semibold text-stone-400">
-              {formatCurrency(totalSpent)} of {formatCurrency(incomeToDate)} earned ({selectedLabel}, {daysElapsed}{' '}
-              days × {formatCurrency(dailyIncome)})
-            </p>
+        {actualSavings != null && (
+          <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
+            <span className="text-sm font-semibold text-stone-300">Actual savings</span>
+            <span className={`text-lg font-bold ${actualSavings < 0 ? 'text-rose-300' : 'text-white'}`}>{formatCurrency(actualSavings)}</span>
           </div>
         )}
-        {savings != null && (
-          <div className="mt-3 flex items-center justify-between border-t border-pink-50 pt-3">
-            <span className="text-sm font-semibold text-stone-400">Savings</span>
-            <span className={`text-lg font-bold ${savings >= 0 ? 'text-stone-800' : 'text-rose-500'}`}>
-              {formatCurrency(savings)}
-            </span>
-          </div>
-        )}
-        {savingsAfterTrips != null && tripsTotal > 0 && (
-          <div className="mt-1 flex items-center justify-between">
-            <span className="text-xs font-semibold text-stone-400">
-              Savings after trips (−{formatCurrency(tripsTotal)})
-            </span>
-            <span
-              className={`text-sm font-bold ${savingsAfterTrips >= 0 ? 'text-stone-600' : 'text-rose-500'}`}
-            >
-              {formatCurrency(savingsAfterTrips)}
-            </span>
-          </div>
-        )}
-        {showsToday && (
-          <div className="mt-3 flex items-center justify-between border-t border-pink-50 pt-3">
-            <span className="text-sm font-semibold text-stone-400">Today</span>
-            <span className="text-lg font-bold text-pink-500">{formatCurrency(todaySpent)}</span>
-          </div>
-        )}
+      </section>
+
+      <section className="mb-5 grid gap-3">
+        <BudgetCard icon="🏠" title="Daily" spent={dailySpent} limit={dailyLimit} tone="daily" />
+        <BudgetCard icon="✈️" title="Trip" spent={tripSpent} limit={tripLimit} tone="trip" />
       </section>
 
       {dailySpend.length > 0 && (
-        <section className="mb-6 rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-stone-500">Per day ({selectedLabel})</h2>
-            <span className="text-xs font-semibold text-stone-400">
-              {selectedDaySpend
-                ? `${shortDayLabelFor(selectedDaySpend.date)}: ${formatCurrency(selectedDaySpend.total)}`
-                : `avg ${formatCurrency(avgDaily)}/day`}
+        <section className="mb-5 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-stone-500">Total spending by day</h2>
+            <span className="text-xs font-bold text-stone-400">
+              {selectedDaySpend ? `${selectedDaySpend.date.slice(5)} · ${formatCurrency(selectedDaySpend.total)}` : 'Tap a bar'}
             </span>
           </div>
-          <div className="-mx-1 flex items-end gap-1 overflow-x-auto px-1 pb-1">
-            {dailySpend.map((d) => {
-              const isToday = d.date === today
-              const isSelected = d.date === selectedDay
-              const heightPct = Math.max(4, Math.round((d.total / maxDaily) * 100))
-              const dayNum = Number(d.date.slice(8, 10))
-              return (
-                <button
-                  key={d.date}
-                  type="button"
-                  onClick={() => setSelectedDay((prev) => (prev === d.date ? null : d.date))}
-                  title={`${d.date}: ${formatCurrency(d.total)}`}
-                  className="flex w-4 flex-shrink-0 flex-col items-center gap-1"
-                >
-                  <div className="flex h-16 w-full items-end">
-                    <div
-                      className={`w-full rounded-t-sm transition-all ${
-                        isSelected
-                          ? 'bg-pink-600 ring-2 ring-pink-300'
-                          : isToday
-                            ? 'bg-pink-500'
-                            : d.total > 0
-                              ? 'bg-pink-300'
-                              : 'bg-pink-50'
-                      }`}
-                      style={{ height: `${heightPct}%` }}
-                    />
-                  </div>
-                  <span
-                    className={`text-[9px] font-semibold ${
-                      isSelected || isToday ? 'text-pink-600' : 'text-stone-300'
-                    }`}
-                  >
-                    {dayNum}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </section>
-      )}
-
-      {tripRows.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-2 text-sm font-semibold text-stone-500">Trips ({selectedLabel})</h2>
-          <ul className="space-y-2">
-            {tripRows.map(({ trip, total }) => (
-              <li key={trip?.id ?? 'unknown-trip'}>
-                <Link
-                  to={trip ? `/trips/${trip.id}` : '/trips'}
-                  className="block rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-stone-700">
-                      {trip?.icon || '✈️'} {trip?.name ?? 'Trip'}
-                    </span>
-                    <span className="font-bold text-stone-800">{formatCurrency(total)}</span>
-                  </div>
-                  {trip?.budget && (
-                    <div className="mt-2">
-                      <BudgetBar spent={total} limit={Number(trip.budget)} />
-                    </div>
-                  )}
-                </Link>
-              </li>
+          <div className="flex h-28 items-end gap-1 overflow-x-auto pb-1">
+            {dailySpend.map((item) => (
+              <button
+                key={item.date}
+                type="button"
+                onClick={() => setSelectedDay(item.date === selectedDay ? null : item.date)}
+                aria-label={`${item.date}: ${formatCurrency(item.total)}`}
+                className={`min-w-3 flex-1 rounded-t-md ${item.date === selectedDay ? 'bg-stone-700' : 'bg-pink-300'}`}
+                style={{ height: `${Math.max(8, (item.total / maxDaily) * 100)}%` }}
+              />
             ))}
-          </ul>
-          <p className="mt-2 text-xs text-stone-400">
-            Not counted toward Total spent / Savings above — trips track against their own budget.
-          </p>
+          </div>
         </section>
       )}
 
-      <Link
-        to="/add"
-        className="mb-6 block w-full rounded-full bg-pink-500 py-3 text-center font-bold text-white shadow-md shadow-pink-200"
-      >
-        + Add expense
-      </Link>
-
-      <section className="mb-6">
-        <h2 className="mb-2 text-sm font-semibold text-stone-500">By person</h2>
-        <div className="grid grid-cols-3 gap-2">
-          {Object.entries(FOR_LABELS).map(([key, { label, icon }]) => (
-            <div
-              key={key}
-              className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
-            >
-              <div className="flex items-center gap-1.5">
-                <img src={icon} alt="" className="h-5 w-5" />
-                <p className="text-xs font-semibold text-stone-400">{label}</p>
-              </div>
-              <p className="mt-1 text-sm font-bold text-stone-800">{formatCurrency(byPerson[key])}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mb-6">
-        <h2 className="mb-2 text-sm font-semibold text-stone-500">Paid by</h2>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
-            <div className="flex items-center gap-1.5">
-              <img src="/icons/nav/anh.png" alt="" className="h-5 w-5" />
-              <p className="text-xs font-semibold text-stone-400">Anh chi</p>
-            </div>
-            <p className="mt-1 text-sm font-bold text-stone-800">{formatCurrency(paidBy.anh)}</p>
-          </div>
-          <div className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
-            <div className="flex items-center gap-1.5">
-              <img src="/icons/nav/em.png" alt="" className="h-5 w-5" />
-              <p className="text-xs font-semibold text-stone-400">Em chi</p>
-            </div>
-            <p className="mt-1 text-sm font-bold text-stone-800">{formatCurrency(paidBy.em)}</p>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <h2 className="mb-2 text-sm font-semibold text-stone-500">By category</h2>
-        {loading && <p className="text-sm text-stone-400">Loading…</p>}
-        {!loading && categoryRows.length === 0 && (
-          <p className="text-sm text-stone-400">No expenses yet.</p>
-        )}
-        <ul className="space-y-2">
-          {categoryRows.map(({ category, total }) => {
-            const budget = category && budgetByCategory[category.id]
-            return (
-              <li
-                key={category?.id ?? 'uncategorized'}
-                className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
+      <section className="mb-5">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-stone-500">By category</h2>
+          <div className="flex rounded-full bg-stone-100 p-1 text-xs font-bold">
+            {['all', 'daily', 'trip'].map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => setExpenseFilter(filter)}
+                className={`rounded-full px-2.5 py-1 capitalize ${expenseFilter === filter ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-400'}`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-2 font-semibold text-stone-700">
-                    <span>{categoryIcon(category)}</span>
-                    {category?.name ?? 'Uncategorized'}
-                  </span>
-                  <span className="font-bold text-stone-800">{formatCurrency(total)}</span>
-                </div>
-                {budget && (
-                  <div className="mt-2">
-                    <BudgetBar spent={total} limit={Number(budget.limit_amount)} />
-                  </div>
-                )}
-              </li>
-            )
-          })}
+                {filter}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ul className="space-y-2">
+          {categoryRows.map(({ category, total }) => (
+            <li key={category?.id ?? 'uncategorized'} className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
+              <span className="flex items-center gap-2 font-semibold text-stone-700">
+                <span>{categoryIcon(category)}</span>{category?.name ?? 'Uncategorized'}
+              </span>
+              <span className="font-bold text-stone-800">{formatCurrency(total)}</span>
+            </li>
+          ))}
+          {!loading && categoryRows.length === 0 && <p className="text-sm text-stone-400">No expenses for this month.</p>}
         </ul>
       </section>
+
+      <section className="mb-5 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
+        <h2 className="mb-3 text-sm font-semibold text-stone-500">Paid by · total expenses</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-pink-50 p-3 text-center">
+            <p className="text-xs font-semibold text-stone-400">Anh chi</p>
+            <p className="mt-1 font-bold text-stone-800">{formatCurrency(paidBy.anh)}</p>
+          </div>
+          <div className="rounded-2xl bg-orange-50 p-3 text-center">
+            <p className="text-xs font-semibold text-stone-400">Em chi</p>
+            <p className="mt-1 font-bold text-stone-800">{formatCurrency(paidBy.em)}</p>
+          </div>
+        </div>
+      </section>
+
+      <Link to="/history" className="block text-center text-sm font-bold text-pink-500">View all transactions →</Link>
     </Layout>
-  )
-}
-
-function BudgetBar({ spent, limit }) {
-  if (!limit) return null
-  const pct = Math.min((spent / limit) * 100, 100)
-  const over = spent > limit
-  const near = !over && pct >= 80
-
-  const barColor = over ? 'bg-rose-500' : near ? 'bg-amber-400' : 'bg-pink-400'
-
-  return (
-    <div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-pink-50">
-        <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
-      </div>
-      {over && <p className="mt-1 text-xs font-bold text-rose-500">Over budget</p>}
-      {near && <p className="mt-1 text-xs font-bold text-amber-500">Approaching limit</p>}
-    </div>
   )
 }

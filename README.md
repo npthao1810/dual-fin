@@ -3,6 +3,10 @@
 A shared expense and budget tracker PWA for two people. React + Vite + Tailwind, Supabase
 (Postgres, Auth, Realtime) as the backend, deployed free on Vercel.
 
+The dashboard tracks two independent monthly budget envelopes—Daily and Trip—and also shows
+their combined Total Expense. Every expense may use its own currency; the original amount is
+kept while budget totals are calculated in VND.
+
 ## 1. Set up Supabase
 
 1. Create a free project at [supabase.com](https://supabase.com).
@@ -15,6 +19,14 @@ A shared expense and budget tracker PWA for two people. React + Vite + Tailwind,
 5. Confirm Realtime is on for `expenses`: **Database > Replication**, toggle it on if the SQL
    script's `alter publication` line didn't already enable it.
 6. Copy the project URL and anon public key from **Settings > API**.
+
+### Updating an existing database
+
+Run unapplied files from [`supabase/migrations`](supabase/migrations) in filename order. For the
+monthly Daily/Trip budgets and per-expense currency controls, run
+[`008_add_monthly_budget_groups.sql`](supabase/migrations/008_add_monthly_budget_groups.sql)
+before deploying the matching frontend version. Existing expenses linked to trips are migrated
+to the Trip budget automatically.
 
 ## 2. Configure the app locally
 

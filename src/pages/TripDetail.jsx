@@ -5,7 +5,7 @@ import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
 import { useRowsWithPending } from '../hooks/useRowsWithPending'
 import { useTrips } from '../hooks/useTrips'
-import { currencySymbol, formatCurrency, formatForeign } from '../lib/format'
+import { formatCurrency, formatForeign } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 import { mutateOrQueue } from '../lib/mutate'
 
@@ -22,18 +22,6 @@ export default function TripDetail() {
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const { expenses, loading } = useExpensesWithPending({ tripId: id })
-
-  async function handleUpdateCurrency(field, value) {
-    const trimmed = value.trim()
-    if (trimmed === String(trip[field] ?? '')) return
-    const parsed = field === 'exchange_rate' ? (trimmed ? Number(trimmed) : null) : trimmed.toUpperCase() || null
-    const updates = { [field]: parsed }
-    if (field === 'currency' && !trimmed) updates.exchange_rate = null
-    // Queued: the pending overlay (useRowsWithPending) shows it immediately.
-    // Not queued: it's already live, so pull the real row to replace baseTrips.
-    const { queued } = await mutateOrQueue({ table: 'trips', op: 'update', match: { id }, payload: updates })
-    if (!queued) refreshTrips()
-  }
 
   async function handleUpdateIcon(value) {
     const trimmed = value.trim()
@@ -85,12 +73,9 @@ export default function TripDetail() {
         )}
         <p className="text-sm font-semibold text-stone-400">Total spent</p>
         <p className="mt-1 text-3xl font-bold text-stone-800">{formatCurrency(total)}</p>
-        {trip.budget && (
-          <p className="mt-1 text-xs font-semibold text-stone-400">
-            Budget {formatCurrency(trip.budget)}
-            {total > trip.budget && <span className="ml-1 text-rose-500">· over budget</span>}
-          </p>
-        )}
+        <p className="mt-1 text-xs font-semibold text-stone-400">
+          Included in the monthly Trip budget for each expense’s payment month
+        </p>
 
         <div className="mt-3 flex items-center gap-2 border-t border-pink-50 pt-3">
           <span className="text-xs font-semibold text-stone-400">Icon</span>
@@ -102,34 +87,6 @@ export default function TripDetail() {
             onBlur={(e) => handleUpdateIcon(e.target.value)}
             className="w-12 rounded-lg border border-pink-200 bg-white px-2 py-1 text-center text-sm"
           />
-        </div>
-
-        <div className="mt-3 flex items-center gap-2 border-t border-pink-50 pt-3">
-          <span className="text-xs font-semibold text-stone-400">Currency</span>
-          <input
-            type="text"
-            defaultValue={trip.currency ?? ''}
-            placeholder="₫ (none)"
-            onBlur={(e) => handleUpdateCurrency('currency', e.target.value)}
-            className="w-20 rounded-lg border border-pink-200 bg-white px-2 py-1 text-center text-xs uppercase text-stone-700 placeholder:text-stone-300 placeholder:normal-case"
-          />
-          {trip.currency && (
-            <>
-              <span className="text-xs text-stone-400">
-                1 {currencySymbol(trip.currency)} =
-              </span>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="any"
-                defaultValue={trip.exchange_rate ?? ''}
-                placeholder="rate"
-                onBlur={(e) => handleUpdateCurrency('exchange_rate', e.target.value)}
-                className="w-20 rounded-lg border border-pink-200 bg-white px-2 py-1 text-center text-xs text-stone-700 placeholder:text-stone-300"
-              />
-              <span className="text-xs text-stone-400">₫</span>
-            </>
-          )}
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
@@ -155,7 +112,7 @@ export default function TripDetail() {
         state={{ trip }}
         className="mb-6 block w-full rounded-full bg-pink-500 py-3 text-center font-bold text-white shadow-md shadow-pink-200"
       >
-        + Add expense to this trip
+        + Add Trip expense
       </Link>
 
       <section className="mb-6">

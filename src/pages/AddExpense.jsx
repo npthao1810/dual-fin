@@ -21,6 +21,7 @@ const FOR_OPTIONS = [
 ]
 
 const DRAFT_KEY = 'dualfin.addExpenseDraft'
+const CURRENCY_OPTIONS = ['VND', 'USD', 'JPY', 'KRW', 'THB', 'EUR']
 
 function loadDraft() {
   try {
@@ -61,11 +62,14 @@ export default function AddExpense() {
   const [forWhom, setForWhom] = useState(() => draft?.forWhom ?? 'us')
   const [emChi, setEmChi] = useState(() => draft?.emChi ?? false)
   const [tripId, setTripId] = useState(() => draft?.tripId ?? presetTripId)
+  const [expenseType, setExpenseType] = useState(() => draft?.expenseType ?? (presetTripId ? 'trip' : 'daily'))
+  const [currency, setCurrency] = useState(() => draft?.currency ?? 'VND')
+  const [exchangeRate, setExchangeRate] = useState(() => draft?.exchangeRate ?? '')
+  const [chargedVnd, setChargedVnd] = useState(() => draft?.chargedVnd ?? '')
   const [date, setDate] = useState(() => draft?.date ?? toISODate(new Date()))
   const { trips: tripsFromHook } = useTrips()
-  // Arriving from "+ Add expense to this trip" already carries the trip
-  // (currency included) — use it immediately so the currency symbol doesn't
-  // flash in late while useTrips' own fetch/cache is still catching up.
+  // Arriving from "+ Add expense to this trip" carries the trip immediately,
+  // so the optional trip label is available before the cached list refreshes.
   const fromNavTrip = location.state?.trip
   const baseTrips =
     fromNavTrip && !tripsFromHook.some((t) => t.id === fromNavTrip.id)
@@ -99,6 +103,10 @@ export default function AddExpense() {
       setForWhom(merged.for_whom ?? 'us')
       setEmChi(merged.em_chi ?? false)
       setTripId(merged.trip_id ?? '')
+      setExpenseType(merged.expense_type ?? (merged.trip_id ? 'trip' : 'daily'))
+      setCurrency(merged.currency ?? 'VND')
+      setExchangeRate(merged.exchange_rate != null ? String(merged.exchange_rate) : '')
+      setChargedVnd(merged.currency ? String(merged.amount) : '')
       setDate(merged.date)
     }
 
@@ -141,7 +149,10 @@ export default function AddExpense() {
   useEffect(() => {
     if (isEditing || presetTripId || trips.length === 0) return
     const match = trips.find((t) => t.start_date && t.end_date && date >= t.start_date && date <= t.end_date)
-    if (match) setTripId(match.id)
+    if (match) {
+      setTripId(match.id)
+      setExpenseType('trip')
+    }
   }, [date, trips, isEditing, presetTripId])
 
   useEffect(() => {
@@ -154,11 +165,11 @@ export default function AddExpense() {
   useEffect(() => {
     if (isEditing) return
     if (amount !== '' || name.trim() !== '') {
-      saveDraft({ amount, name, categoryId, forWhom, emChi, tripId, date })
+      saveDraft({ amount, name, categoryId, forWhom, emChi, tripId, expenseType, currency, exchangeRate, chargedVnd, date })
     } else {
       clearDraft()
     }
-  }, [isEditing, amount, name, categoryId, forWhom, emChi, tripId, date])
+  }, [isEditing, amount, name, categoryId, forWhom, emChi, tripId, expenseType, currency, exchangeRate, chargedVnd, date])
 
   const orderedCategories = useMemo(() => {
     const recent = recentCategoryIds
@@ -173,16 +184,20 @@ export default function AddExpense() {
       setAmount((prev) => prev.slice(0, -1))
       return
     }
+    if (key === '.') {
+      setAmount((prev) => (prev.includes('.') ? prev : `${prev || '0'}.`))
+      return
+    }
     setAmount((prev) => (prev === '0' ? key : (prev + key).slice(0, 12)))
   }
 
   const displayAmount = amount ? Number(amount).toLocaleString('vi-VN') : '0'
 
-  const activeTrip = trips.find((t) => t.id === tripId)
-  const activeCurrency = activeTrip?.currency ?? null
-  const activeRate = activeTrip?.exchange_rate != null ? Number(activeTrip.exchange_rate) : null
-  const vndPreview =
-    activeCurrency && activeRate && amount ? Math.round(Number(amount) * activeRate) : null
+  const activeCurrency = currency.trim().toUpperCase() || 'VND'
+  const isForeignCurrency = activeCurrency !== 'VND'
+  const activeRate = Number(exchangeRate) || null
+  const calculatedVnd = isForeignCurrency && activeRate && amount ? Math.round(Number(amount) * activeRate) : null
+  const vndPreview = chargedVnd ? Number(chargedVnd) : calculatedVnd
 
   const { today, yesterday } = useMemo(() => {
     const now = new Date()
@@ -205,8 +220,8 @@ export default function AddExpense() {
       setError('Enter a name for the expense')
       return
     }
-    if (activeCurrency && !activeRate) {
-      setError(`Set an exchange rate for ${activeCurrency} on this trip first`)
+    if (isForeignCurrency && !chargedVnd && !activeRate) {
+      setError(`Enter the VND amount charged or an exchange rate for ${activeCurrency}`)
       return
     }
     if (!household) return
@@ -216,10 +231,12 @@ export default function AddExpense() {
     const payload = {
       household_id: household.id,
       category_id: categoryId || null,
-      trip_id: tripId || null,
-      amount: activeCurrency ? Math.round(numericAmount * activeRate) : numericAmount,
-      original_amount: activeCurrency ? numericAmount : null,
-      currency: activeCurrency,
+      trip_id: expenseType === 'trip' && tripId ? tripId : null,
+      expense_type: expenseType,
+      amount: isForeignCurrency ? Math.round(Number(chargedVnd) || numericAmount * activeRate) : numericAmount,
+      original_amount: isForeignCurrency ? numericAmount : null,
+      currency: isForeignCurrency ? activeCurrency : null,
+      exchange_rate: isForeignCurrency && activeRate ? activeRate : null,
       note: name.trim(),
       for_whom: forWhom,
       em_chi: emChi,
@@ -233,7 +250,7 @@ export default function AddExpense() {
         setError(error.message)
         return
       }
-      navigate(tripId ? `/trips/${tripId}` : '/history')
+      navigate(expenseType === 'trip' && tripId ? `/trips/${tripId}` : '/history')
       return
     }
 
@@ -246,7 +263,7 @@ export default function AddExpense() {
       return
     }
     clearDraft()
-    navigate(tripId ? `/trips/${tripId}` : '/')
+    navigate(expenseType === 'trip' && tripId ? `/trips/${tripId}` : '/')
   }
 
   async function handleDelete() {
@@ -267,15 +284,106 @@ export default function AddExpense() {
         <span className="text-4xl font-bold tabular-nums text-stone-800">
           {displayAmount} {currencySymbol(activeCurrency)}
         </span>
-        {activeCurrency && (
+        {isForeignCurrency && (
           <p className="mt-1 text-sm font-semibold text-stone-400">
-            {vndPreview != null ? `≈ ${formatCurrency(vndPreview)}` : `Set this trip's exchange rate below`}
+            {vndPreview != null ? `Counts as ${formatCurrency(vndPreview)}` : 'Add the VND charge or exchange rate below'}
           </p>
         )}
       </div>
 
+      <section className="mb-4 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
+        <p className="mb-2 text-sm font-semibold text-stone-500">Budget</p>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { value: 'daily', label: '🏠 Daily' },
+            { value: 'trip', label: '✈️ Trip' },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                setExpenseType(option.value)
+                if (option.value === 'daily') setTripId('')
+              }}
+              className={`rounded-2xl border px-3 py-2.5 text-sm font-bold ${
+                expenseType === option.value
+                  ? 'border-pink-400 bg-pink-100 text-pink-600'
+                  : 'border-stone-200 bg-white text-stone-500'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-4 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
+        <p className="mb-2 text-sm font-semibold text-stone-500">Currency</p>
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+          {CURRENCY_OPTIONS.map((code) => (
+            <button
+              key={code}
+              type="button"
+              onClick={() => {
+                setCurrency(code)
+                if (code === 'VND') {
+                  setExchangeRate('')
+                  setChargedVnd('')
+                }
+              }}
+              className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-sm font-semibold ${
+                activeCurrency === code
+                  ? 'border-pink-400 bg-pink-100 text-pink-600'
+                  : 'border-stone-200 bg-white text-stone-500'
+              }`}
+            >
+              {code}
+            </button>
+          ))}
+        </div>
+        <label className="mt-3 block text-xs font-semibold text-stone-400" htmlFor="custom-currency">
+          Other currency
+        </label>
+        <input
+          id="custom-currency"
+          type="text"
+          maxLength={6}
+          value={CURRENCY_OPTIONS.includes(activeCurrency) ? '' : currency}
+          onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+          placeholder="e.g. SGD"
+          className="mt-1 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm uppercase text-stone-700 placeholder:normal-case placeholder:text-stone-300"
+        />
+        {isForeignCurrency && (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <label className="text-xs font-semibold text-stone-400">
+              Actual charge in VND
+              <input
+                type="number"
+                inputMode="decimal"
+                value={chargedVnd}
+                onChange={(e) => setChargedVnd(e.target.value)}
+                placeholder="Most accurate"
+                className="mt-1 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
+              />
+            </label>
+            <label className="text-xs font-semibold text-stone-400">
+              1 {activeCurrency} in VND
+              <input
+                type="number"
+                inputMode="decimal"
+                step="any"
+                value={exchangeRate}
+                onChange={(e) => setExchangeRate(e.target.value)}
+                placeholder="Exchange rate"
+                className="mt-1 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm text-stone-700 placeholder:text-stone-300"
+              />
+            </label>
+          </div>
+        )}
+      </section>
+
       <div className="mb-4">
-        <NumberPad onPress={handleKey} />
+        <NumberPad onPress={handleKey} allowDecimal={isForeignCurrency} />
       </div>
 
       <section className="mb-4 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
@@ -402,7 +510,7 @@ export default function AddExpense() {
               </button>
             </div>
           </div>
-          <div>
+          {expenseType === 'trip' && <div>
             <label className="mb-1 block text-sm font-semibold text-stone-500" htmlFor="trip">
               Trip (optional)
             </label>
@@ -416,11 +524,10 @@ export default function AddExpense() {
               {trips.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
-                  {t.currency ? ` (${currencySymbol(t.currency)})` : ''}
                 </option>
               ))}
             </select>
-          </div>
+          </div>}
         </div>
       </section>
 
