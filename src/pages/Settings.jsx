@@ -6,10 +6,8 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue'
 import { useRowsWithPending } from '../hooks/useRowsWithPending'
 import { useAuth } from '../context/AuthContext'
 import { useHousehold } from '../context/HouseholdContext'
-import { useBudgets } from '../hooks/useBudgets'
 import { useMonthlyBudget } from '../hooks/useMonthlyBudget'
-import { firstOfMonth } from '../lib/format'
-import { categoryIcon, fallbackEmojiFor, guessCategoryEmoji } from '../lib/categoryIcons'
+import { fallbackEmojiFor, guessCategoryEmoji } from '../lib/categoryIcons'
 
 const CATEGORY_COLORS = [
   '#fb7185', '#fb923c', '#f472b6', '#fdba74', '#f43f5e', '#fed7aa', '#ec4899', '#fbbf24',
@@ -26,9 +24,7 @@ function PendingBadge({ row }) {
 export default function Settings() {
   const { user, signOut } = useAuth()
   const { household, categories, refresh } = useHousehold()
-  const [month, setMonth] = useState(firstOfMonth())
-  const { budgets, upsertBudget, deleteBudget } = useBudgets(month)
-  const { budget: monthlyBudget, saveBudget: saveMonthlyBudget } = useMonthlyBudget(month)
+  const { budget: monthlyBudget, saveBudget: saveMonthlyBudget } = useMonthlyBudget()
   const queue = useOfflineQueue()
   const displayCategories = useRowsWithPending(
     categories,
@@ -39,8 +35,6 @@ export default function Settings() {
   const [newCategory, setNewCategory] = useState('')
   const [newIcon, setNewIcon] = useState('')
   const [savingCategory, setSavingCategory] = useState(false)
-  const [budgetDrafts, setBudgetDrafts] = useState({})
-  const [budgetsExpanded, setBudgetsExpanded] = useState(false)
   const [dailyIncomeDraft, setDailyIncomeDraft] = useState(null)
   const [budgetStartDraft, setBudgetStartDraft] = useState(null)
   const [dailyLimitDraft, setDailyLimitDraft] = useState(null)
@@ -97,42 +91,6 @@ export default function Settings() {
     if (!trimmed || !current || trimmed === current.icon) return
     await mutateOrQueue({ table: 'categories', op: 'update', match: { id: categoryId }, payload: { icon: trimmed } })
     refresh()
-  }
-
-  // Budgets are keyed by (household, category, month) rather than a row id, so
-  // their pending state is looked up from the queue directly instead of via useRowsWithPending.
-  function pendingBudgetFor(categoryId) {
-    return [...queue]
-      .reverse()
-      .find(
-        (item) =>
-          item.table === 'budgets' &&
-          (item.payload?.category_id === categoryId || item.match?.category_id === categoryId) &&
-          (item.payload?.month ?? item.match?.month) === month
-      )
-  }
-
-  function budgetValueFor(categoryId) {
-    if (budgetDrafts[categoryId] !== undefined) return budgetDrafts[categoryId]
-    const pending = pendingBudgetFor(categoryId)
-    if (pending) return pending.op === 'delete' ? '' : String(pending.payload.limit_amount)
-    const existing = budgets.find((b) => b.category_id === categoryId)
-    return existing ? String(existing.limit_amount) : ''
-  }
-
-  async function handleBudgetBlur(categoryId) {
-    const value = budgetDrafts[categoryId]
-    if (value === undefined) return
-    if (value === '') {
-      await deleteBudget(categoryId)
-    } else {
-      await upsertBudget(categoryId, Number(value))
-    }
-    setBudgetDrafts((prev) => {
-      const next = { ...prev }
-      delete next[categoryId]
-      return next
-    })
   }
 
   // Household settings are single fields on one row — look up any queued
@@ -195,20 +153,9 @@ export default function Settings() {
       <section className="mb-6 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-stone-700">Monthly budget envelopes</h2>
-            <p className="mt-0.5 text-xs text-stone-400">Daily and Trip budgets reset each month</p>
+            <h2 className="text-sm font-semibold text-stone-700">Monthly budgets</h2>
+            <p className="mt-0.5 text-xs text-stone-400">These Daily and Trip limits apply every month</p>
           </div>
-          <input
-            type="month"
-            value={month.slice(0, 7)}
-            onChange={(event) => {
-              setMonth(`${event.target.value}-01`)
-              setDailyLimitDraft(null)
-              setTripLimitDraft(null)
-              setBudgetDrafts({})
-            }}
-            className="w-32 rounded-xl border border-pink-200 bg-white px-2 py-1.5 text-xs font-semibold text-stone-600"
-          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <label className="rounded-2xl bg-pink-50 p-3 text-xs font-bold text-stone-500">
@@ -323,67 +270,6 @@ export default function Settings() {
             <p className="text-sm text-stone-400">No categories yet — add one above.</p>
           )}
         </ul>
-      </section>
-
-      <section className="mb-6">
-        <button
-          type="button"
-          onClick={() => setBudgetsExpanded((v) => !v)}
-          className="flex w-full items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
-        >
-          <span className="text-sm font-semibold text-stone-500">
-            Daily category limits — {new Date(`${month}T00:00:00`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-          </span>
-          <span className="text-stone-400">{budgetsExpanded ? '▾' : '▸'}</span>
-        </button>
-        {budgetsExpanded && (
-        <ul className="mt-2 space-y-2">
-          {displayCategories.map((c) => {
-            const pendingBudget = pendingBudgetFor(c.id)
-            return (
-              <li
-                key={c.id}
-                className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
-              >
-                <span className="flex items-center gap-2 text-sm font-semibold text-stone-700">
-                  <span>{categoryIcon(c)}</span>
-                  {c.name}
-                </span>
-                <div className="text-right">
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      value={budgetValueFor(c.id)}
-                      onChange={(e) =>
-                        setBudgetDrafts((prev) => ({ ...prev, [c.id]: e.target.value }))
-                      }
-                      onBlur={() => handleBudgetBlur(c.id)}
-                      className="w-28 rounded-xl border border-pink-200 bg-white px-2 py-1.5 text-right text-sm text-stone-700"
-                    />
-                    <span className="text-sm font-semibold text-stone-400">₫</span>
-                  </div>
-                  {pendingBudget?.status === 'pending' && (
-                    <p className="mt-1 text-xs font-bold text-amber-500">🔄 Pending sync</p>
-                  )}
-                  {pendingBudget?.status === 'error' && (
-                    <div className="mt-1 flex items-center justify-end gap-2">
-                      <p className="text-xs font-bold text-rose-500">⚠️ Couldn't sync</p>
-                      <button
-                        type="button"
-                        onClick={() => removeFromQueue(pendingBudget.id)}
-                        className="text-xs font-bold text-stone-400"
-                      >
-                        Discard
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-        )}
       </section>
 
       <section className="mb-6">

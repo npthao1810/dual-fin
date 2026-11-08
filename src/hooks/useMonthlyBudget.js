@@ -4,15 +4,16 @@ import { useHousehold } from '../context/HouseholdContext'
 import { readCache, writeCache } from '../lib/localCache'
 import { mutateOrQueue } from '../lib/mutate'
 
-function cacheKeyFor(householdId, month) {
-  return `monthly-budget-groups:${householdId}:${month}`
+function cacheKeyFor(householdId) {
+  return `monthly-budget-groups:${householdId}:recurring`
 }
 
 const EMPTY_BUDGET = { daily_limit: 0, trip_limit: 0 }
+const RECURRING_BUDGET_KEY = '2000-01-01'
 
-export function useMonthlyBudget(month) {
+export function useMonthlyBudget() {
   const { household } = useHousehold()
-  const key = household ? cacheKeyFor(household.id, month) : null
+  const key = household ? cacheKeyFor(household.id) : null
   const cached = key ? readCache(key) : null
   const [budget, setBudget] = useState(() => cached || EMPTY_BUDGET)
   const [loading, setLoading] = useState(() => !cached)
@@ -31,7 +32,8 @@ export function useMonthlyBudget(month) {
       .from('monthly_budget_groups')
       .select('*')
       .eq('household_id', household.id)
-      .eq('month', month)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
 
     if (!error) {
@@ -40,7 +42,7 @@ export function useMonthlyBudget(month) {
       writeCache(key, next)
     }
     setLoading(false)
-  }, [household, key, month])
+  }, [household, key])
 
   useEffect(() => {
     fetchBudget()
@@ -50,7 +52,9 @@ export function useMonthlyBudget(month) {
     if (!household || !key) return null
     const next = {
       household_id: household.id,
-      month,
+      // A fixed key represents recurring monthly limits without a destructive
+      // database migration. The latest existing budget is used as the default.
+      month: RECURRING_BUDGET_KEY,
       daily_limit: Math.max(0, Number(dailyLimit) || 0),
       trip_limit: Math.max(0, Number(tripLimit) || 0),
       updated_at: new Date().toISOString(),

@@ -69,7 +69,6 @@ function BudgetCard({ icon, title, spent, limit, tone, cumulative = false }) {
 export default function Dashboard() {
   const { household } = useHousehold()
   const today = toISODate(new Date())
-  const currentMonth = firstOfMonth()
   const monthOptions = buildMonthOptions(household?.budget_start_date)
   const [selectedPeriod, setSelectedPeriod] = useState('so_far')
   const [activeTab, setActiveTab] = useState('overall')
@@ -80,7 +79,7 @@ export default function Dashboard() {
   const periodStart = isSoFar ? household?.budget_start_date : range.start
   const periodEnd = isSoFar || range.end > today ? today : range.end
   const { expenses, loading } = useExpensesWithPending({ startDate: periodStart, endDate: periodEnd })
-  const { budget } = useMonthlyBudget(isSoFar ? currentMonth : selectedPeriod)
+  const { budget } = useMonthlyBudget()
 
   const dailyExpenses = expenses.filter((expense) => typeFor(expense) === 'daily')
   const tripExpenses = expenses.filter((expense) => typeFor(expense) === 'trip')

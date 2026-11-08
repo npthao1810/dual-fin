@@ -3,9 +3,10 @@
 A shared expense and budget tracker PWA for two people. React + Vite + Tailwind, Supabase
 (Postgres, Auth, Realtime) as the backend, deployed free on Vercel.
 
-The dashboard tracks two independent monthly budget envelopes—Daily and Trip—and also shows
-their combined Total Expense. Every expense may use its own currency; the original amount is
-kept while budget totals are calculated in VND.
+The dashboard tracks two independent recurring monthly budget envelopes—Daily and Trip—and
+also shows their combined Total Expense. The same limits apply every month and are managed in
+Settings. Every expense may use its own currency; the original amount is kept while budget
+totals are calculated in VND.
 
 ## 1. Set up Supabase
 
@@ -57,5 +58,4 @@ logging expenses.
 
 - The app-icon files in `public/icons/` are solid-color placeholders — swap in real 192×192 and
   512×512 PNGs before you care about how the home-screen icon looks.
-- The household's overall `monthly_budget` is edited directly in the Supabase table editor for
-  now; per-category budgets are editable in the app's Settings screen.
+- Daily and Trip monthly limits are edited in the app's Settings screen and apply to every month.
