@@ -3,6 +3,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const buildId = (process.env.VERCEL_GIT_COMMIT_SHA || 'local-v2').slice(0, 8)
+
 // https://vite.dev/config/
 export default defineConfig({
   server: {
@@ -42,6 +44,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        cacheId: `dual-fin-${buildId}`,
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
         // Every route (e.g. /trips/:id) is client-side — serve the cached app shell
         // for any navigation the network can't fulfil, instead of a browser error page.
@@ -49,4 +53,13 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        entryFileNames: `assets/[name]-[hash]-${buildId}.js`,
+        chunkFileNames: `assets/[name]-[hash]-${buildId}.js`,
+        assetFileNames: `assets/[name]-[hash]-${buildId}[extname]`,
+      },
+    },
+  },
 })
