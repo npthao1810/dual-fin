@@ -37,28 +37,46 @@ function typeFor(expense) {
   return expense.expense_type ?? (expense.trip_id ? 'trip' : 'daily')
 }
 
-function BudgetCard({ icon, title, spent, limit, tone }) {
+/** Shared "how much of the limit is used" numbers. The bar width is capped at 100%, the label is not. */
+function usage(spent, limit) {
   const remaining = limit - spent
-  const percent = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0
-  const barColor = tone === 'trip' ? 'bg-orange-400' : 'bg-pink-500'
-  const cardColor = tone === 'trip' ? 'border-orange-100 bg-orange-50/60' : 'border-pink-100 bg-pink-50/60'
+  const rawPercent = limit > 0 ? Math.round((spent / limit) * 100) : 0
+  return {
+    remaining,
+    percent: rawPercent,
+    barWidth: Math.min(100, rawPercent),
+    over: limit > 0 && remaining < 0,
+    near: limit > 0 && remaining >= 0 && rawPercent >= 80,
+  }
+}
+
+function BudgetCard({ icon, title, spent, limit, tone }) {
+  const { remaining, percent, barWidth, over, near } = usage(spent, limit)
+  const barColor = over ? 'bg-rose-500' : near ? 'bg-amber-400' : tone === 'trip' ? 'bg-orange-400' : 'bg-pink-500'
+  const cardColor = over
+    ? 'border-rose-200 bg-rose-50'
+    : tone === 'trip'
+      ? 'border-orange-100 bg-orange-50/60'
+      : 'border-pink-100 bg-pink-50/60'
   return (
     <div className={`rounded-2xl border p-3 ${cardColor}`}>
       <div className="flex items-center justify-between">
         <p className="text-sm font-bold text-stone-700">{icon} {title}</p>
-        <p className="text-sm font-bold text-stone-800">{formatCurrency(spent)}</p>
+        <p className={`text-sm font-bold ${over ? 'text-rose-600' : 'text-stone-800'}`}>{formatCurrency(spent)}</p>
       </div>
       {limit > 0 && (
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
-          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${percent}%` }} />
+          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${barWidth}%` }} />
         </div>
       )}
-      <div className="mt-1 flex justify-between text-[11px] font-semibold text-stone-400">
+      <div className="mt-1 flex items-center justify-between text-[11px] font-semibold text-stone-400">
         <span>{limit > 0 ? `${percent}% of ${formatCurrency(limit)}` : 'Set a daily limit in Settings'}</span>
-        {limit > 0 && (
-          <span className={remaining < 0 ? 'text-rose-500' : ''}>
-            {remaining < 0 ? `${formatCurrency(Math.abs(remaining))} over` : `${formatCurrency(remaining)} left`}
+        {over ? (
+          <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white">
+            {formatCurrency(Math.abs(remaining))} over
           </span>
+        ) : (
+          limit > 0 && <span className={near ? 'text-amber-600' : ''}>{formatCurrency(remaining)} left</span>
         )}
       </div>
     </div>
@@ -100,7 +118,7 @@ export default function Dashboard() {
   const tripLimit = tripRate * daysElapsed
   const totalLimit = dailyLimit + tripLimit
   const totalRemaining = totalLimit - totalSpent
-  const totalPercent = totalLimit > 0 ? Math.min(100, Math.round((totalSpent / totalLimit) * 100)) : 0
+  const total = usage(totalSpent, totalLimit)
   const pendingCount = expenses.filter((expense) => expense.pending).length
 
   const visibleExpenses = activeTab === 'overall'
@@ -109,7 +127,7 @@ export default function Dashboard() {
   const focusedSpent = activeTab === 'daily' ? dailySpent : tripSpent
   const focusedLimit = activeTab === 'daily' ? dailyLimit : tripLimit
   const focusedRemaining = focusedLimit - focusedSpent
-  const focusedPercent = focusedLimit > 0 ? Math.min(100, Math.round((focusedSpent / focusedLimit) * 100)) : 0
+  const focused = usage(focusedSpent, focusedLimit)
   const focusedLabel = activeTab === 'daily' ? 'Daily' : 'Trip'
   const visiblePendingCount = visibleExpenses.filter((expense) => expense.pending).length
 
@@ -187,15 +205,17 @@ export default function Dashboard() {
             {totalLimit > 0 ? (
               <>
                 <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/20">
-                  <div className="h-full rounded-full bg-pink-400" style={{ width: `${totalPercent}%` }} />
+                  <div className={`h-full rounded-full ${total.over ? 'bg-rose-400' : total.near ? 'bg-amber-300' : 'bg-pink-400'}`} style={{ width: `${total.barWidth}%` }} />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs font-semibold text-stone-300">
-                  <span>{totalPercent}% of {formatCurrency(totalLimit)}</span>
+                  <span>{total.percent}% of {formatCurrency(totalLimit)}</span>
                   <span>{daysElapsed} days × {formatCurrency(dailyRate + tripRate)}</span>
                 </div>
                 <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
-                  <span className="text-sm font-semibold text-stone-300">Savings</span>
-                  <span className={`text-lg font-bold ${totalRemaining < 0 ? 'text-rose-300' : 'text-white'}`}>{formatCurrency(totalRemaining)}</span>
+                  <span className="text-sm font-semibold text-stone-300">{total.over ? 'Overspent' : 'Savings'}</span>
+                  <span className={`text-lg font-bold ${total.over ? 'text-rose-300' : 'text-white'}`}>
+                    {total.over ? `−${formatCurrency(Math.abs(totalRemaining))}` : formatCurrency(totalRemaining)}
+                  </span>
                 </div>
               </>
             ) : (
@@ -209,20 +229,24 @@ export default function Dashboard() {
           </section>
         </>
       ) : (
-        <section className={`mb-5 rounded-3xl p-5 shadow-lg ${activeTab === 'trip' ? 'bg-gradient-to-br from-orange-500 to-orange-400 text-white shadow-orange-100' : 'bg-gradient-to-br from-pink-600 to-pink-500 text-white shadow-pink-100'}`}>
+        <section className={`mb-5 rounded-3xl p-5 shadow-lg ${focused.over ? 'bg-gradient-to-br from-rose-700 to-rose-600 text-white shadow-rose-100' : activeTab === 'trip' ? 'bg-gradient-to-br from-orange-500 to-orange-400 text-white shadow-orange-100' : 'bg-gradient-to-br from-pink-600 to-pink-500 text-white shadow-pink-100'}`}>
           <p className="text-sm font-semibold text-white/75">{focusedLabel} expense</p>
           <p className="mt-1 text-3xl font-bold">{formatCurrency(focusedSpent)}</p>
           {visiblePendingCount > 0 && <p className="mt-1 text-xs font-semibold text-amber-100">Includes {visiblePendingCount} pending sync</p>}
           {focusedLimit > 0 ? (
             <>
               <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/25">
-                <div className="h-full rounded-full bg-white" style={{ width: `${focusedPercent}%` }} />
+                <div className={`h-full rounded-full ${focused.near ? 'bg-amber-200' : 'bg-white'}`} style={{ width: `${focused.barWidth}%` }} />
               </div>
               <div className="mt-2 flex items-center justify-between text-xs font-semibold text-white/80">
-                <span>{focusedPercent}% of {formatCurrency(focusedLimit)}</span>
-                <span className={focusedRemaining < 0 ? 'text-red-100' : 'text-white'}>
-                  {focusedRemaining < 0 ? `${formatCurrency(Math.abs(focusedRemaining))} over` : `${formatCurrency(focusedRemaining)} remaining`}
-                </span>
+                <span>{focused.percent}% of {formatCurrency(focusedLimit)}</span>
+                {focused.over ? (
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-rose-600">
+                    {formatCurrency(Math.abs(focusedRemaining))} over
+                  </span>
+                ) : (
+                  <span className="text-white">{formatCurrency(focusedRemaining)} remaining</span>
+                )}
               </div>
             </>
           ) : (
