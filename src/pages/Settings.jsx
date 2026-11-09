@@ -6,7 +6,6 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue'
 import { useRowsWithPending } from '../hooks/useRowsWithPending'
 import { useAuth } from '../context/AuthContext'
 import { useHousehold } from '../context/HouseholdContext'
-import { useMonthlyBudget } from '../hooks/useMonthlyBudget'
 import { fallbackEmojiFor, guessCategoryEmoji } from '../lib/categoryIcons'
 
 const CATEGORY_COLORS = [
@@ -24,7 +23,6 @@ function PendingBadge({ row }) {
 export default function Settings() {
   const { user, signOut } = useAuth()
   const { household, categories, refresh } = useHousehold()
-  const { budget: monthlyBudget, saveBudget: saveMonthlyBudget } = useMonthlyBudget()
   const queue = useOfflineQueue()
   const displayCategories = useRowsWithPending(
     categories,
@@ -35,23 +33,9 @@ export default function Settings() {
   const [newCategory, setNewCategory] = useState('')
   const [newIcon, setNewIcon] = useState('')
   const [savingCategory, setSavingCategory] = useState(false)
-  const [dailyIncomeDraft, setDailyIncomeDraft] = useState(null)
   const [budgetStartDraft, setBudgetStartDraft] = useState(null)
-  const [dailyLimitDraft, setDailyLimitDraft] = useState(null)
-  const [tripLimitDraft, setTripLimitDraft] = useState(null)
-  const [savingMonthlyBudget, setSavingMonthlyBudget] = useState(false)
-  const [monthlyBudgetSaved, setMonthlyBudgetSaved] = useState(false)
-
-  async function handleSaveMonthlyBudget() {
-    setSavingMonthlyBudget(true)
-    await saveMonthlyBudget(
-      dailyLimitDraft ?? monthlyBudget?.daily_limit ?? 0,
-      tripLimitDraft ?? monthlyBudget?.trip_limit ?? 0
-    )
-    setSavingMonthlyBudget(false)
-    setMonthlyBudgetSaved(true)
-    window.setTimeout(() => setMonthlyBudgetSaved(false), 1800)
-  }
+  // Per-field drafts for the two per-day limits, keyed by household column.
+  const [limitDrafts, setLimitDrafts] = useState({})
 
   async function handleAddCategory(e) {
     e.preventDefault()
@@ -109,28 +93,34 @@ export default function Settings() {
       )
   }
 
-  const pendingDailyIncome = pendingHouseholdFieldUpdate('daily_income')
   const pendingBudgetStart = pendingHouseholdFieldUpdate('budget_start_date')
 
-  const dailyIncomeValue =
-    dailyIncomeDraft ??
-    (pendingDailyIncome
-      ? String(pendingDailyIncome.payload.daily_income)
-      : household?.daily_income != null
-        ? String(household.daily_income)
-        : '')
+  function limitValue(field) {
+    if (limitDrafts[field] != null) return limitDrafts[field]
+    const pending = pendingHouseholdFieldUpdate(field)
+    if (pending) return String(pending.payload[field])
+    return household?.[field] != null ? String(household[field]) : ''
+  }
 
-  async function handleDailyIncomeBlur() {
-    if (dailyIncomeDraft === null || dailyIncomeDraft === '' || !household) return
+  async function handleLimitBlur(field) {
+    const draft = limitDrafts[field]
+    if (draft == null || !household) return
+    const value = Math.max(0, Number(draft) || 0)
+    setLimitDrafts((prev) => ({ ...prev, [field]: null }))
+    if (value === Number(household[field] ?? 0)) return
     await mutateOrQueue({
       table: 'households',
       op: 'update',
       match: { id: household.id },
-      payload: { daily_income: Number(dailyIncomeDraft) },
+      payload: { [field]: value },
     })
-    setDailyIncomeDraft(null)
     refresh()
   }
+
+  const LIMIT_FIELDS = [
+    { field: 'daily_household_limit', label: '🏠 Household', tone: 'pink' },
+    { field: 'daily_trip_limit', label: '✈️ Trip', tone: 'orange' },
+  ]
 
   const budgetStartValue =
     budgetStartDraft ?? pendingBudgetStart?.payload.budget_start_date ?? household?.budget_start_date ?? ''
@@ -151,50 +141,37 @@ export default function Settings() {
   return (
     <Layout title="Settings">
       <section className="mb-6 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-stone-700">Monthly budgets</h2>
-            <p className="mt-0.5 text-xs text-stone-400">These Daily and Trip limits apply every month</p>
-          </div>
-        </div>
+        <h2 className="text-sm font-semibold text-stone-700">Daily limits</h2>
+        <p className="mt-0.5 mb-3 text-xs text-stone-400">
+          Budget per day. Each period's budget is the limit × days elapsed; savings are what's left.
+        </p>
         <div className="grid grid-cols-2 gap-3">
-          <label className="rounded-2xl bg-pink-50 p-3 text-xs font-bold text-stone-500">
-            🏠 Daily
-            <div className="mt-2 flex items-center gap-1">
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                value={dailyLimitDraft ?? monthlyBudget?.daily_limit ?? ''}
-                onChange={(event) => setDailyLimitDraft(event.target.value)}
-                className="min-w-0 flex-1 rounded-xl border border-pink-200 bg-white px-2 py-2 text-right text-sm text-stone-700"
-              />
-              <span>₫</span>
-            </div>
-          </label>
-          <label className="rounded-2xl bg-orange-50 p-3 text-xs font-bold text-stone-500">
-            ✈️ Trip
-            <div className="mt-2 flex items-center gap-1">
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                value={tripLimitDraft ?? monthlyBudget?.trip_limit ?? ''}
-                onChange={(event) => setTripLimitDraft(event.target.value)}
-                className="min-w-0 flex-1 rounded-xl border border-orange-200 bg-white px-2 py-2 text-right text-sm text-stone-700"
-              />
-              <span>₫</span>
-            </div>
-          </label>
+          {LIMIT_FIELDS.map(({ field, label, tone }) => {
+            const pending = pendingHouseholdFieldUpdate(field)
+            return (
+              <label
+                key={field}
+                className={`rounded-2xl p-3 text-xs font-bold text-stone-500 ${tone === 'orange' ? 'bg-orange-50' : 'bg-pink-50'}`}
+              >
+                {label}
+                <div className="mt-2 flex items-center gap-1">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={limitValue(field)}
+                    onChange={(event) => setLimitDrafts((prev) => ({ ...prev, [field]: event.target.value }))}
+                    onBlur={() => handleLimitBlur(field)}
+                    className={`min-w-0 flex-1 rounded-xl border bg-white px-2 py-2 text-right text-sm text-stone-700 ${tone === 'orange' ? 'border-orange-200' : 'border-pink-200'}`}
+                  />
+                  <span>₫/day</span>
+                </div>
+                {pending?.status === 'pending' && <p className="mt-1 text-amber-500">🔄 Pending sync</p>}
+                {pending?.status === 'error' && <p className="mt-1 text-rose-500">⚠️ Couldn't sync</p>}
+              </label>
+            )
+          })}
         </div>
-        <button
-          type="button"
-          onClick={handleSaveMonthlyBudget}
-          disabled={savingMonthlyBudget}
-          className="mt-3 w-full rounded-full bg-stone-800 py-2.5 text-sm font-bold text-white disabled:opacity-60"
-        >
-          {savingMonthlyBudget ? 'Saving…' : monthlyBudgetSaved ? 'Saved ✓' : 'Save monthly budgets'}
-        </button>
       </section>
 
       <section className="mb-6">
@@ -277,31 +254,8 @@ export default function Settings() {
         <div className="space-y-2">
           <div className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
             <div>
-              <p className="text-sm font-semibold text-stone-700">Daily income</p>
-              <p className="text-xs text-stone-400">Used to calculate savings</p>
-              {pendingDailyIncome?.status === 'pending' && (
-                <p className="mt-1 text-xs font-bold text-amber-500">🔄 Pending sync</p>
-              )}
-              {pendingDailyIncome?.status === 'error' && (
-                <p className="mt-1 text-xs font-bold text-rose-500">⚠️ Couldn't sync</p>
-              )}
-            </div>
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                inputMode="decimal"
-                value={dailyIncomeValue}
-                onChange={(e) => setDailyIncomeDraft(e.target.value)}
-                onBlur={handleDailyIncomeBlur}
-                className="w-28 rounded-xl border border-pink-200 bg-white px-2 py-1.5 text-right text-sm text-stone-700"
-              />
-              <span className="text-sm font-semibold text-stone-400">₫</span>
-            </div>
-          </div>
-          <div className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
-            <div>
               <p className="text-sm font-semibold text-stone-700">Budget start date</p>
-              <p className="text-xs text-stone-400">Savings count from this date, not the 1st</p>
+              <p className="text-xs text-stone-400">Limits accrue from this date</p>
               {pendingBudgetStart?.status === 'pending' && (
                 <p className="mt-1 text-xs font-bold text-amber-500">🔄 Pending sync</p>
               )}

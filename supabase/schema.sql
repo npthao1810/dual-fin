@@ -12,7 +12,8 @@ create table households (
   member_1_id    uuid not null references auth.users(id),
   member_2_id    uuid references auth.users(id),
   monthly_budget numeric,
-  daily_income   numeric not null default 1000000,
+  daily_household_limit numeric not null default 0 check (daily_household_limit >= 0), -- VND per day for Daily spending
+  daily_trip_limit      numeric not null default 0 check (daily_trip_limit >= 0),      -- VND per day set aside for trips
   budget_start_date date not null default current_date,
   created_at     timestamptz not null default now()
 );
@@ -66,21 +67,9 @@ create table budgets (
   unique (household_id, category_id, month)
 );
 
-create table monthly_budget_groups (
-  id            uuid primary key default gen_random_uuid(),
-  household_id  uuid not null references households(id) on delete cascade,
-  month         date not null,
-  daily_limit   numeric not null default 0 check (daily_limit >= 0),
-  trip_limit    numeric not null default 0 check (trip_limit >= 0),
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now(),
-  unique (household_id, month)
-);
-
 create index expenses_household_date_idx on expenses (household_id, date);
 create index expenses_trip_idx on expenses (trip_id);
 create index budgets_household_month_idx on budgets (household_id, month);
-create index monthly_budget_groups_household_month_idx on monthly_budget_groups (household_id, month);
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security
@@ -91,7 +80,6 @@ alter table categories enable row level security;
 alter table trips enable row level security;
 alter table expenses enable row level security;
 alter table budgets enable row level security;
-alter table monthly_budget_groups enable row level security;
 
 -- households: a user can see/update the household they belong to
 create policy "household members can select" on households
@@ -169,30 +157,6 @@ create policy "household members can modify budgets" on budgets
     exists (
       select 1 from households h
       where h.id = budgets.household_id
-        and (auth.uid() = h.member_1_id or auth.uid() = h.member_2_id)
-    )
-  );
-
-create policy "household members can select monthly budget groups" on monthly_budget_groups
-  for select using (
-    exists (
-      select 1 from households h
-      where h.id = monthly_budget_groups.household_id
-        and (auth.uid() = h.member_1_id or auth.uid() = h.member_2_id)
-    )
-  );
-
-create policy "household members can modify monthly budget groups" on monthly_budget_groups
-  for all using (
-    exists (
-      select 1 from households h
-      where h.id = monthly_budget_groups.household_id
-        and (auth.uid() = h.member_1_id or auth.uid() = h.member_2_id)
-    )
-  ) with check (
-    exists (
-      select 1 from households h
-      where h.id = monthly_budget_groups.household_id
         and (auth.uid() = h.member_1_id or auth.uid() = h.member_2_id)
     )
   );

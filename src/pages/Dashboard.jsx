@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
-import { useMonthlyBudget } from '../hooks/useMonthlyBudget'
 import { daysBetweenInclusive, firstOfMonth, formatCurrency, monthRange, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 
@@ -38,7 +37,7 @@ function typeFor(expense) {
   return expense.expense_type ?? (expense.trip_id ? 'trip' : 'daily')
 }
 
-function BudgetCard({ icon, title, spent, limit, tone, cumulative = false }) {
+function BudgetCard({ icon, title, spent, limit, tone }) {
   const remaining = limit - spent
   const percent = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0
   const barColor = tone === 'trip' ? 'bg-orange-400' : 'bg-pink-500'
@@ -49,13 +48,13 @@ function BudgetCard({ icon, title, spent, limit, tone, cumulative = false }) {
         <p className="text-sm font-bold text-stone-700">{icon} {title}</p>
         <p className="text-sm font-bold text-stone-800">{formatCurrency(spent)}</p>
       </div>
-      {!cumulative && (
+      {limit > 0 && (
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
           <div className={`h-full rounded-full ${barColor}`} style={{ width: `${percent}%` }} />
         </div>
       )}
       <div className="mt-1 flex justify-between text-[11px] font-semibold text-stone-400">
-        <span>{cumulative ? 'Cumulative spend' : limit > 0 ? `${percent}% of ${formatCurrency(limit)}` : 'Set a budget in Settings'}</span>
+        <span>{limit > 0 ? `${percent}% of ${formatCurrency(limit)}` : 'Set a daily limit in Settings'}</span>
         {limit > 0 && (
           <span className={remaining < 0 ? 'text-rose-500' : ''}>
             {remaining < 0 ? `${formatCurrency(Math.abs(remaining))} over` : `${formatCurrency(remaining)} left`}
@@ -76,18 +75,29 @@ export default function Dashboard() {
   const isSoFar = selectedPeriod === 'so_far'
   const [year, month] = isSoFar ? [new Date().getFullYear(), new Date().getMonth() + 1] : selectedPeriod.split('-').map(Number)
   const range = monthRange(year, month)
-  const periodStart = isSoFar ? household?.budget_start_date : range.start
+  const budgetStartDate = household?.budget_start_date ?? null
+  // A single month is clipped to the tracking start date, so the first
+  // (partial) month only accrues limits from the day tracking began.
+  const periodStart = isSoFar
+    ? budgetStartDate
+    : budgetStartDate && budgetStartDate > range.start
+      ? budgetStartDate
+      : range.start
   const periodEnd = isSoFar || range.end > today ? today : range.end
   const { expenses, loading } = useExpensesWithPending({ startDate: periodStart, endDate: periodEnd })
-  const { budget } = useMonthlyBudget()
+
+  // Limits are per-day rates: a period's budget is rate × days elapsed in it.
+  const daysElapsed = periodStart && periodStart <= periodEnd ? daysBetweenInclusive(periodStart, periodEnd) : 0
+  const dailyRate = Number(household?.daily_household_limit) || 0
+  const tripRate = Number(household?.daily_trip_limit) || 0
 
   const dailyExpenses = expenses.filter((expense) => typeFor(expense) === 'daily')
   const tripExpenses = expenses.filter((expense) => typeFor(expense) === 'trip')
   const dailySpent = dailyExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
   const tripSpent = tripExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
   const totalSpent = dailySpent + tripSpent
-  const dailyLimit = isSoFar ? 0 : Number(budget?.daily_limit) || 0
-  const tripLimit = isSoFar ? 0 : Number(budget?.trip_limit) || 0
+  const dailyLimit = dailyRate * daysElapsed
+  const tripLimit = tripRate * daysElapsed
   const totalLimit = dailyLimit + tripLimit
   const totalRemaining = totalLimit - totalSpent
   const totalPercent = totalLimit > 0 ? Math.min(100, Math.round((totalSpent / totalLimit) * 100)) : 0
@@ -130,10 +140,6 @@ export default function Dashboard() {
     },
     { anh: 0, em: 0 }
   )
-
-  const daysElapsed = periodStart ? daysBetweenInclusive(periodStart, periodEnd) : 0
-  const incomeToDate = household?.daily_income != null ? Number(household.daily_income) * daysElapsed : null
-  const actualSavings = incomeToDate != null ? incomeToDate - totalSpent : null
 
   return (
     <Layout
@@ -185,27 +191,21 @@ export default function Dashboard() {
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs font-semibold text-stone-300">
                   <span>{totalPercent}% of {formatCurrency(totalLimit)}</span>
-                  <span className={totalRemaining < 0 ? 'text-rose-300' : 'text-white'}>
-                    {totalRemaining < 0 ? `${formatCurrency(Math.abs(totalRemaining))} over` : `${formatCurrency(totalRemaining)} remaining`}
-                  </span>
+                  <span>{daysElapsed} days × {formatCurrency(dailyRate + tripRate)}</span>
+                </div>
+                <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
+                  <span className="text-sm font-semibold text-stone-300">Savings</span>
+                  <span className={`text-lg font-bold ${totalRemaining < 0 ? 'text-rose-300' : 'text-white'}`}>{formatCurrency(totalRemaining)}</span>
                 </div>
               </>
-            ) : isSoFar ? (
-              <p className="mt-3 text-xs font-semibold text-stone-300">Cumulative Daily + Trip spending</p>
             ) : (
-              <Link to="/settings" className="mt-3 inline-block text-xs font-bold text-pink-300">Set this month’s budgets →</Link>
-            )}
-            {actualSavings != null && (
-              <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
-                <span className="text-sm font-semibold text-stone-300">Actual savings</span>
-                <span className={`text-lg font-bold ${actualSavings < 0 ? 'text-rose-300' : 'text-white'}`}>{formatCurrency(actualSavings)}</span>
-              </div>
+              <Link to="/settings" className="mt-3 inline-block text-xs font-bold text-pink-300">Set your daily limits →</Link>
             )}
           </section>
 
           <section className="mb-5 grid gap-3">
-            <BudgetCard icon="🏠" title="Daily" spent={dailySpent} limit={dailyLimit} tone="daily" cumulative={isSoFar} />
-            <BudgetCard icon="✈️" title="Trip" spent={tripSpent} limit={tripLimit} tone="trip" cumulative={isSoFar} />
+            <BudgetCard icon="🏠" title="Daily" spent={dailySpent} limit={dailyLimit} tone="daily" />
+            <BudgetCard icon="✈️" title="Trip" spent={tripSpent} limit={tripLimit} tone="trip" />
           </section>
         </>
       ) : (
@@ -225,10 +225,8 @@ export default function Dashboard() {
                 </span>
               </div>
             </>
-          ) : isSoFar ? (
-            <p className="mt-3 text-xs font-semibold text-white/75">Cumulative {focusedLabel.toLowerCase()} spending</p>
           ) : (
-            <Link to="/settings" className="mt-3 inline-block text-xs font-bold text-white">Set this month’s budget →</Link>
+            <Link to="/settings" className="mt-3 inline-block text-xs font-bold text-white">Set a daily {focusedLabel.toLowerCase()} limit →</Link>
           )}
         </section>
       )}

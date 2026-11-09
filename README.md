@@ -16,7 +16,7 @@ totals are calculated in VND.
 3. In **Authentication > Users**, manually create two user accounts (yours and your partner's) —
    signup is not open, so this is the only way in.
 4. In **Table Editor > households**, insert one row with `member_1_id` and `member_2_id` set to
-   the two users' UUIDs (from the Authentication tab), and optionally a `monthly_budget`.
+   the two users' UUIDs (from the Authentication tab). Set the daily limits later in the app.
 5. Confirm Realtime is on for `expenses`: **Database > Replication**, toggle it on if the SQL
    script's `alter publication` line didn't already enable it.
 6. Copy the project URL and anon public key from **Settings > API**.
@@ -24,10 +24,10 @@ totals are calculated in VND.
 ### Updating an existing database
 
 Run unapplied files from [`supabase/migrations`](supabase/migrations) in filename order. For the
-monthly Daily/Trip budgets and per-expense currency controls, run
-[`008_add_monthly_budget_groups.sql`](supabase/migrations/008_add_monthly_budget_groups.sql)
-before deploying the matching frontend version. Existing expenses linked to trips are migrated
-to the Trip budget automatically.
+daily household/trip limits and per-expense currency controls, run
+[`008_daily_limits_and_expense_type.sql`](supabase/migrations/008_daily_limits_and_expense_type.sql)
+before deploying the matching frontend version. It copies the old `daily_income` into the daily
+household limit and drops it, and marks existing trip-linked expenses as Trip expenses.
 
 ## 2. Configure the app locally
 
@@ -58,4 +58,6 @@ logging expenses.
 
 - The app-icon files in `public/icons/` are solid-color placeholders — swap in real 192×192 and
   512×512 PNGs before you care about how the home-screen icon looks.
-- Daily and Trip monthly limits are edited in the app's Settings screen and apply to every month.
+- The daily household and daily trip limits are per-day rates, edited in the app's Settings
+  screen. A period's budget is the limit × days elapsed (from the budget start date); savings are
+  that budget minus what was spent.
