@@ -9,7 +9,6 @@ const links = [
     match: (path) => path.startsWith('/history') || path.startsWith('/trips'),
   },
   { to: '/add', label: 'Add', icon: '/icons/nav/add.png', match: (path) => path.startsWith('/add') || path.startsWith('/edit') },
-  { to: '/charts', label: 'Charts', icon: '/icons/nav/charts.png', match: (path) => path.startsWith('/charts') },
   { to: '/settings', label: 'Settings', icon: '/icons/nav/settings.png', match: (path) => path.startsWith('/settings') },
 ]
 

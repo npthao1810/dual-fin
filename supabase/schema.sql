@@ -12,7 +12,8 @@ create table households (
   member_1_id    uuid not null references auth.users(id),
   member_2_id    uuid references auth.users(id),
   monthly_budget numeric,
-  daily_income   numeric not null default 1000000,
+  daily_household_limit numeric not null default 0 check (daily_household_limit >= 0), -- VND per day for Daily spending
+  daily_trip_limit      numeric not null default 0 check (daily_trip_limit >= 0),      -- VND per day set aside for trips
   budget_start_date date not null default current_date,
   created_at     timestamptz not null default now()
 );
@@ -47,6 +48,8 @@ create table expenses (
   amount          numeric not null check (amount > 0), -- always VND
   original_amount numeric, -- amount actually entered, in `currency`, when foreign
   currency        text,    -- snapshot of the trip's currency at entry time
+  exchange_rate   numeric, -- VND per 1 unit of currency at entry time
+  expense_type    text not null default 'daily' check (expense_type in ('daily', 'trip')),
   note            text,
   for_whom        text not null default 'us' check (for_whom in ('anh', 'em', 'us')),
   em_chi          boolean not null default false,

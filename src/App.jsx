@@ -8,7 +8,6 @@ import AddExpense from './pages/AddExpense'
 import History from './pages/History'
 import Trips from './pages/Trips'
 import TripDetail from './pages/TripDetail'
-import Charts from './pages/Charts'
 import Settings from './pages/Settings'
 
 export default function App() {
@@ -63,14 +62,6 @@ export default function App() {
               element={
                 <RequireAuth>
                   <TripDetail />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/charts"
-              element={
-                <RequireAuth>
-                  <Charts />
                 </RequireAuth>
               }
             />

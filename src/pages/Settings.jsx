@@ -6,9 +6,7 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue'
 import { useRowsWithPending } from '../hooks/useRowsWithPending'
 import { useAuth } from '../context/AuthContext'
 import { useHousehold } from '../context/HouseholdContext'
-import { useBudgets } from '../hooks/useBudgets'
-import { firstOfMonth } from '../lib/format'
-import { categoryIcon, fallbackEmojiFor, guessCategoryEmoji } from '../lib/categoryIcons'
+import { fallbackEmojiFor, guessCategoryEmoji } from '../lib/categoryIcons'
 
 const CATEGORY_COLORS = [
   '#fb7185', '#fb923c', '#f472b6', '#fdba74', '#f43f5e', '#fed7aa', '#ec4899', '#fbbf24',
@@ -25,8 +23,6 @@ function PendingBadge({ row }) {
 export default function Settings() {
   const { user, signOut } = useAuth()
   const { household, categories, refresh } = useHousehold()
-  const month = firstOfMonth()
-  const { budgets, upsertBudget, deleteBudget } = useBudgets(month)
   const queue = useOfflineQueue()
   const displayCategories = useRowsWithPending(
     categories,
@@ -37,10 +33,12 @@ export default function Settings() {
   const [newCategory, setNewCategory] = useState('')
   const [newIcon, setNewIcon] = useState('')
   const [savingCategory, setSavingCategory] = useState(false)
-  const [budgetDrafts, setBudgetDrafts] = useState({})
-  const [budgetsExpanded, setBudgetsExpanded] = useState(false)
-  const [dailyIncomeDraft, setDailyIncomeDraft] = useState(null)
   const [budgetStartDraft, setBudgetStartDraft] = useState(null)
+  // Per-field drafts for the two per-day limits, keyed by household column.
+  const [limitDrafts, setLimitDrafts] = useState({})
+  const [savingLimits, setSavingLimits] = useState(false)
+  const [limitsSaved, setLimitsSaved] = useState(false)
+  const [limitsError, setLimitsError] = useState(null)
 
   async function handleAddCategory(e) {
     e.preventDefault()
@@ -82,42 +80,6 @@ export default function Settings() {
     refresh()
   }
 
-  // Budgets are keyed by (household, category, month) rather than a row id, so
-  // their pending state is looked up from the queue directly instead of via useRowsWithPending.
-  function pendingBudgetFor(categoryId) {
-    return [...queue]
-      .reverse()
-      .find(
-        (item) =>
-          item.table === 'budgets' &&
-          (item.payload?.category_id === categoryId || item.match?.category_id === categoryId) &&
-          (item.payload?.month ?? item.match?.month) === month
-      )
-  }
-
-  function budgetValueFor(categoryId) {
-    if (budgetDrafts[categoryId] !== undefined) return budgetDrafts[categoryId]
-    const pending = pendingBudgetFor(categoryId)
-    if (pending) return pending.op === 'delete' ? '' : String(pending.payload.limit_amount)
-    const existing = budgets.find((b) => b.category_id === categoryId)
-    return existing ? String(existing.limit_amount) : ''
-  }
-
-  async function handleBudgetBlur(categoryId) {
-    const value = budgetDrafts[categoryId]
-    if (value === undefined) return
-    if (value === '') {
-      await deleteBudget(categoryId)
-    } else {
-      await upsertBudget(categoryId, Number(value))
-    }
-    setBudgetDrafts((prev) => {
-      const next = { ...prev }
-      delete next[categoryId]
-      return next
-    })
-  }
-
   // Household settings are single fields on one row — look up any queued
   // update touching that field the same way budgets do.
   function pendingHouseholdFieldUpdate(field) {
@@ -134,28 +96,46 @@ export default function Settings() {
       )
   }
 
-  const pendingDailyIncome = pendingHouseholdFieldUpdate('daily_income')
   const pendingBudgetStart = pendingHouseholdFieldUpdate('budget_start_date')
 
-  const dailyIncomeValue =
-    dailyIncomeDraft ??
-    (pendingDailyIncome
-      ? String(pendingDailyIncome.payload.daily_income)
-      : household?.daily_income != null
-        ? String(household.daily_income)
-        : '')
+  function limitValue(field) {
+    if (limitDrafts[field] != null) return limitDrafts[field]
+    const pending = pendingHouseholdFieldUpdate(field)
+    if (pending) return String(pending.payload[field])
+    return household?.[field] != null ? String(household[field]) : ''
+  }
 
-  async function handleDailyIncomeBlur() {
-    if (dailyIncomeDraft === null || dailyIncomeDraft === '' || !household) return
-    await mutateOrQueue({
+  const limitsDirty = Object.values(limitDrafts).some((v) => v != null)
+
+  async function handleSaveLimits() {
+    if (!household || !limitsDirty) return
+    const payload = {}
+    for (const [field, draft] of Object.entries(limitDrafts)) {
+      if (draft != null) payload[field] = Math.max(0, Number(draft) || 0)
+    }
+    setSavingLimits(true)
+    setLimitsError(null)
+    const { error } = await mutateOrQueue({
       table: 'households',
       op: 'update',
       match: { id: household.id },
-      payload: { daily_income: Number(dailyIncomeDraft) },
+      payload,
     })
-    setDailyIncomeDraft(null)
-    refresh()
+    setSavingLimits(false)
+    if (error) {
+      setLimitsError(error.message)
+      return
+    }
+    setLimitDrafts({})
+    await refresh()
+    setLimitsSaved(true)
+    window.setTimeout(() => setLimitsSaved(false), 1800)
   }
+
+  const LIMIT_FIELDS = [
+    { field: 'daily_household_limit', label: '🏠 Household', tone: 'pink' },
+    { field: 'daily_trip_limit', label: '✈️ Trip', tone: 'orange' },
+  ]
 
   const budgetStartValue =
     budgetStartDraft ?? pendingBudgetStart?.payload.budget_start_date ?? household?.budget_start_date ?? ''
@@ -175,6 +155,48 @@ export default function Settings() {
 
   return (
     <Layout title="Settings">
+      <section className="mb-6 rounded-3xl border border-pink-100 bg-white p-4 shadow-sm shadow-pink-50">
+        <h2 className="text-sm font-semibold text-stone-700">Daily limits</h2>
+        <p className="mt-0.5 mb-3 text-xs text-stone-400">
+          Budget per day. Each period's budget is the limit × days elapsed; savings are what's left.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          {LIMIT_FIELDS.map(({ field, label, tone }) => {
+            const pending = pendingHouseholdFieldUpdate(field)
+            return (
+              <label
+                key={field}
+                className={`rounded-2xl p-3 text-xs font-bold text-stone-500 ${tone === 'orange' ? 'bg-orange-50' : 'bg-pink-50'}`}
+              >
+                {label}
+                <div className="mt-2 flex items-center gap-1">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={limitValue(field)}
+                    onChange={(event) => setLimitDrafts((prev) => ({ ...prev, [field]: event.target.value }))}
+                    className={`min-w-0 flex-1 rounded-xl border bg-white px-2 py-2 text-right text-sm text-stone-700 ${tone === 'orange' ? 'border-orange-200' : 'border-pink-200'}`}
+                  />
+                  <span>₫/day</span>
+                </div>
+                {pending?.status === 'pending' && <p className="mt-1 text-amber-500">🔄 Pending sync</p>}
+                {pending?.status === 'error' && <p className="mt-1 text-rose-500">⚠️ Couldn't sync</p>}
+              </label>
+            )
+          })}
+        </div>
+        {limitsError && <p className="mt-2 text-xs font-bold text-rose-500">Couldn't save: {limitsError}</p>}
+        <button
+          type="button"
+          onClick={handleSaveLimits}
+          disabled={savingLimits || !limitsDirty}
+          className="mt-3 w-full rounded-full bg-stone-800 py-2.5 text-sm font-bold text-white disabled:opacity-40"
+        >
+          {savingLimits ? 'Saving…' : limitsSaved ? 'Saved ✓' : 'Save limits'}
+        </button>
+      </section>
+
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold text-stone-500">Categories</h2>
         <form onSubmit={handleAddCategory} className="mb-3 flex gap-2">
@@ -251,96 +273,12 @@ export default function Settings() {
       </section>
 
       <section className="mb-6">
-        <button
-          type="button"
-          onClick={() => setBudgetsExpanded((v) => !v)}
-          className="flex w-full items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
-        >
-          <span className="text-sm font-semibold text-stone-500">
-            Monthly budgets — {new Date(month).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-          </span>
-          <span className="text-stone-400">{budgetsExpanded ? '▾' : '▸'}</span>
-        </button>
-        {budgetsExpanded && (
-        <ul className="mt-2 space-y-2">
-          {displayCategories.map((c) => {
-            const pendingBudget = pendingBudgetFor(c.id)
-            return (
-              <li
-                key={c.id}
-                className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
-              >
-                <span className="flex items-center gap-2 text-sm font-semibold text-stone-700">
-                  <span>{categoryIcon(c)}</span>
-                  {c.name}
-                </span>
-                <div className="text-right">
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      value={budgetValueFor(c.id)}
-                      onChange={(e) =>
-                        setBudgetDrafts((prev) => ({ ...prev, [c.id]: e.target.value }))
-                      }
-                      onBlur={() => handleBudgetBlur(c.id)}
-                      className="w-28 rounded-xl border border-pink-200 bg-white px-2 py-1.5 text-right text-sm text-stone-700"
-                    />
-                    <span className="text-sm font-semibold text-stone-400">₫</span>
-                  </div>
-                  {pendingBudget?.status === 'pending' && (
-                    <p className="mt-1 text-xs font-bold text-amber-500">🔄 Pending sync</p>
-                  )}
-                  {pendingBudget?.status === 'error' && (
-                    <div className="mt-1 flex items-center justify-end gap-2">
-                      <p className="text-xs font-bold text-rose-500">⚠️ Couldn't sync</p>
-                      <button
-                        type="button"
-                        onClick={() => removeFromQueue(pendingBudget.id)}
-                        className="text-xs font-bold text-stone-400"
-                      >
-                        Discard
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-        )}
-      </section>
-
-      <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold text-stone-500">Household</h2>
         <div className="space-y-2">
           <div className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
             <div>
-              <p className="text-sm font-semibold text-stone-700">Daily income</p>
-              <p className="text-xs text-stone-400">Used to calculate savings</p>
-              {pendingDailyIncome?.status === 'pending' && (
-                <p className="mt-1 text-xs font-bold text-amber-500">🔄 Pending sync</p>
-              )}
-              {pendingDailyIncome?.status === 'error' && (
-                <p className="mt-1 text-xs font-bold text-rose-500">⚠️ Couldn't sync</p>
-              )}
-            </div>
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                inputMode="decimal"
-                value={dailyIncomeValue}
-                onChange={(e) => setDailyIncomeDraft(e.target.value)}
-                onBlur={handleDailyIncomeBlur}
-                className="w-28 rounded-xl border border-pink-200 bg-white px-2 py-1.5 text-right text-sm text-stone-700"
-              />
-              <span className="text-sm font-semibold text-stone-400">₫</span>
-            </div>
-          </div>
-          <div className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
-            <div>
               <p className="text-sm font-semibold text-stone-700">Budget start date</p>
-              <p className="text-xs text-stone-400">Savings count from this date, not the 1st</p>
+              <p className="text-xs text-stone-400">Limits accrue from this date</p>
               {pendingBudgetStart?.status === 'pending' && (
                 <p className="mt-1 text-xs font-bold text-amber-500">🔄 Pending sync</p>
               )}
