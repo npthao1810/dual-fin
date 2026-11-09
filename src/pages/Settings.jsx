@@ -36,6 +36,9 @@ export default function Settings() {
   const [budgetStartDraft, setBudgetStartDraft] = useState(null)
   // Per-field drafts for the two per-day limits, keyed by household column.
   const [limitDrafts, setLimitDrafts] = useState({})
+  const [savingLimits, setSavingLimits] = useState(false)
+  const [limitsSaved, setLimitsSaved] = useState(false)
+  const [limitsError, setLimitsError] = useState(null)
 
   async function handleAddCategory(e) {
     e.preventDefault()
@@ -102,19 +105,31 @@ export default function Settings() {
     return household?.[field] != null ? String(household[field]) : ''
   }
 
-  async function handleLimitBlur(field) {
-    const draft = limitDrafts[field]
-    if (draft == null || !household) return
-    const value = Math.max(0, Number(draft) || 0)
-    setLimitDrafts((prev) => ({ ...prev, [field]: null }))
-    if (value === Number(household[field] ?? 0)) return
-    await mutateOrQueue({
+  const limitsDirty = Object.values(limitDrafts).some((v) => v != null)
+
+  async function handleSaveLimits() {
+    if (!household || !limitsDirty) return
+    const payload = {}
+    for (const [field, draft] of Object.entries(limitDrafts)) {
+      if (draft != null) payload[field] = Math.max(0, Number(draft) || 0)
+    }
+    setSavingLimits(true)
+    setLimitsError(null)
+    const { error } = await mutateOrQueue({
       table: 'households',
       op: 'update',
       match: { id: household.id },
-      payload: { [field]: value },
+      payload,
     })
-    refresh()
+    setSavingLimits(false)
+    if (error) {
+      setLimitsError(error.message)
+      return
+    }
+    setLimitDrafts({})
+    await refresh()
+    setLimitsSaved(true)
+    window.setTimeout(() => setLimitsSaved(false), 1800)
   }
 
   const LIMIT_FIELDS = [
@@ -161,7 +176,6 @@ export default function Settings() {
                     min="0"
                     value={limitValue(field)}
                     onChange={(event) => setLimitDrafts((prev) => ({ ...prev, [field]: event.target.value }))}
-                    onBlur={() => handleLimitBlur(field)}
                     className={`min-w-0 flex-1 rounded-xl border bg-white px-2 py-2 text-right text-sm text-stone-700 ${tone === 'orange' ? 'border-orange-200' : 'border-pink-200'}`}
                   />
                   <span>₫/day</span>
@@ -172,6 +186,15 @@ export default function Settings() {
             )
           })}
         </div>
+        {limitsError && <p className="mt-2 text-xs font-bold text-rose-500">Couldn't save: {limitsError}</p>}
+        <button
+          type="button"
+          onClick={handleSaveLimits}
+          disabled={savingLimits || !limitsDirty}
+          className="mt-3 w-full rounded-full bg-stone-800 py-2.5 text-sm font-bold text-white disabled:opacity-40"
+        >
+          {savingLimits ? 'Saving…' : limitsSaved ? 'Saved ✓' : 'Save limits'}
+        </button>
       </section>
 
       <section className="mb-6">
