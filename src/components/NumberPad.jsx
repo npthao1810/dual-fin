@@ -7,7 +7,7 @@ export default function NumberPad({ onPress, allowDecimal = false }) {
           key={key}
           type="button"
           onClick={() => onPress(key)}
-          className="rounded-2xl border border-pink-100 bg-white py-4 text-xl font-bold text-stone-700 shadow-sm active:bg-pink-50"
+          className="rounded-2xl border border-pink-100 bg-white py-3 text-xl font-bold text-stone-700 shadow-sm active:bg-pink-50"
         >
           {key}
         </button>
