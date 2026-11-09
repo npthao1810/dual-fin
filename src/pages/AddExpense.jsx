@@ -71,6 +71,10 @@ export default function AddExpense() {
   const [amount, setAmount] = useState(() => draft?.amount ?? '')
   const [name, setName] = useState(() => draft?.name ?? '')
   const [categoryId, setCategoryId] = useState(() => draft?.categoryId ?? '')
+  // categoryTouched: the user chose a category themselves, so the note no
+  // longer picks one for them. categoryAuto: the current one came from the note.
+  const [categoryTouched, setCategoryTouched] = useState(() => draft?.categoryTouched ?? isEditing)
+  const [categoryAuto, setCategoryAuto] = useState(false)
   const [forWhom, setForWhom] = useState(() => draft?.forWhom ?? 'us')
   const [emChi, setEmChi] = useState(() => draft?.emChi ?? false)
   const [tripId, setTripId] = useState(() => draft?.tripId ?? presetTripId)
@@ -227,14 +231,14 @@ export default function AddExpense() {
     if (isEditing) return
     if (amount !== '' || name.trim() !== '') {
       saveDraft({
-        amount, name, categoryId, forWhom, emChi, tripId, expenseType, tripAuto, tripOverride,
+        amount, name, categoryId, categoryTouched, forWhom, emChi, tripId, expenseType, tripAuto, tripOverride,
         currency, currencyFromTrip, exchangeRate, chargedVnd, date,
       })
     } else {
       clearDraft()
     }
   }, [
-    isEditing, amount, name, categoryId, forWhom, emChi, tripId, expenseType, tripAuto, tripOverride,
+    isEditing, amount, name, categoryId, categoryTouched, forWhom, emChi, tripId, expenseType, tripAuto, tripOverride,
     currency, currencyFromTrip, exchangeRate, chargedVnd, date,
   ])
 
@@ -247,11 +251,27 @@ export default function AddExpense() {
     return selected && !picks.some((c) => c.id === selected.id) ? [selected, ...picks.slice(0, TOP_PICKS - 1)] : picks
   }, [categories, rankedIds, categoryId])
 
-  const suggestedCategory = useMemo(() => {
-    const suggestedId = suggestCategoryId(name, recentExpenses)
-    if (!suggestedId || suggestedId === categoryId) return null
-    return categories.find((c) => c.id === suggestedId) ?? null
-  }, [name, recentExpenses, categoryId, categories])
+  const suggestedId = useMemo(() => {
+    const id = suggestCategoryId(name, recentExpenses)
+    return id && categories.some((c) => c.id === id) ? id : null
+  }, [name, recentExpenses, categories])
+
+  // Until the user picks a category themselves, follow what the note suggests.
+  useEffect(() => {
+    if (isEditing || categoryTouched || !suggestedId || suggestedId === categoryId) return
+    setCategoryId(suggestedId)
+    setCategoryAuto(true)
+  }, [isEditing, categoryTouched, suggestedId, categoryId])
+
+  function pickCategory(nextId) {
+    setCategoryTouched(true)
+    setCategoryAuto(false)
+    setCategoryId(nextId)
+  }
+
+  const suggestedCategory =
+    categoryTouched && suggestedId && suggestedId !== categoryId ? categories.find((c) => c.id === suggestedId) : null
+  const autoCategory = categoryAuto && suggestedId === categoryId ? categories.find((c) => c.id === categoryId) : null
 
   function handleKey(key) {
     if (key === '⌫') {
@@ -381,20 +401,20 @@ export default function AddExpense() {
 
   return (
     <Layout title={isEditing ? 'Edit expense' : 'Add expense'}>
-      <div className="mb-3 text-center">
-        <div className="flex items-center justify-center gap-2">
-          <span className="text-4xl font-bold tabular-nums text-stone-800">{displayAmount}</span>
+      <div className="mb-5 mt-1 text-center">
+        <div className="flex items-center justify-center gap-3">
+          <span className="text-5xl font-bold tabular-nums text-stone-800">{displayAmount}</span>
           <button
             type="button"
             onClick={() => setSheet('currency')}
             aria-label={`Currency: ${activeCurrency}. Change currency`}
-            className="rounded-full border border-pink-200 bg-white px-2.5 py-1 text-sm font-bold text-stone-500"
+            className="rounded-full border border-pink-200 bg-white px-3 py-1.5 text-sm font-bold text-stone-500"
           >
             {currencySymbol(activeCurrency)} {activeCurrency} ▾
           </button>
         </div>
         {isForeignCurrency && (
-          <p className="mt-1 text-sm font-semibold text-stone-400">
+          <p className="mt-2 text-sm font-semibold text-stone-400">
             {vndPreview != null
               ? `Counts as ${formatCurrency(vndPreview)}`
               : activeRate
@@ -405,7 +425,7 @@ export default function AddExpense() {
         )}
       </div>
 
-      <div className="mb-3">
+      <div className="mb-5">
         <label className="sr-only" htmlFor="name">Name</label>
         <input
           id="name"
@@ -414,43 +434,45 @@ export default function AddExpense() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="What was it? e.g. Groceries"
-          className="w-full rounded-2xl border border-pink-200 bg-white px-4 py-2.5 text-sm text-stone-700 placeholder:text-stone-300"
+          className="w-full rounded-2xl border border-pink-200 bg-white px-4 py-3 text-base text-stone-700 placeholder:text-stone-300"
         />
       </div>
 
-      <div className="mb-3">
-        <div className="flex items-center gap-2">
-          <div className="-ml-4 flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1 pl-4">
-            {topPicks.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setCategoryId(c.id === categoryId ? '' : c.id)}
-                aria-pressed={categoryId === c.id}
-                className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-sm font-semibold ${chipClass(categoryId === c.id)}`}
-              >
-                {categoryIcon(c)} {c.name}
-              </button>
-            ))}
-            {categories.length === 0 && <p className="text-sm text-stone-400">Add categories in Settings first.</p>}
-          </div>
+      <div className="mb-5">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-sm font-semibold text-stone-500">Category</p>
           {categories.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setSheet('category')}
-              className="flex-shrink-0 rounded-full border border-dashed border-stone-300 bg-white px-3 py-1.5 text-sm font-bold text-stone-500"
-            >
-              All {categories.length} ▾
+            <button type="button" onClick={() => setSheet('category')} className="text-sm font-bold text-pink-500">
+              All {categories.length} ›
             </button>
           )}
         </div>
+        <div className="flex flex-wrap gap-2">
+          {topPicks.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => pickCategory(c.id === categoryId ? '' : c.id)}
+              aria-pressed={categoryId === c.id}
+              className={`max-w-full truncate rounded-full border px-3.5 py-2 text-sm font-semibold ${chipClass(categoryId === c.id)}`}
+            >
+              {categoryIcon(c)} {c.name}
+            </button>
+          ))}
+          {categories.length === 0 && <p className="text-sm text-stone-400">Add categories in Settings first.</p>}
+        </div>
+        {autoCategory && (
+          <p className="mt-2 text-xs font-semibold text-amber-600">
+            ✨ {autoCategory.name} — suggested from similar notes. Tap another to change.
+          </p>
+        )}
         {suggestedCategory && (
           <button
             type="button"
-            onClick={() => setCategoryId(suggestedCategory.id)}
-            className="mt-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700"
+            onClick={() => pickCategory(suggestedCategory.id)}
+            className="mt-2 rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700"
           >
-            {categoryIcon(suggestedCategory)} {suggestedCategory.name}? <span className="font-semibold">tap to use</span>
+            ✨ {categoryIcon(suggestedCategory)} {suggestedCategory.name}? <span className="font-semibold">tap to use</span>
           </button>
         )}
       </div>
@@ -458,24 +480,27 @@ export default function AddExpense() {
       <button
         type="button"
         onClick={() => setSheet('details')}
-        className="mb-3 flex w-full items-center justify-between gap-2 rounded-2xl border border-pink-100 bg-white px-4 py-2.5 text-left shadow-sm shadow-pink-50"
+        className="mb-5 flex w-full items-center justify-between gap-3 rounded-2xl border border-pink-100 bg-white px-4 py-3 text-left shadow-sm shadow-pink-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
       >
-        <span className="min-w-0 truncate text-sm font-semibold text-stone-600">
-          {forLabel} · {emChi ? 'Em chi' : 'Anh chi'} · {dateLabel}
-          <span className="text-stone-300"> · </span>
-          {expenseType === 'trip' ? (
-            <span className="text-orange-600">
-              ✈️ {selectedTrip?.name ?? 'Trip'}
-              {tripAuto && <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold">auto</span>}
-            </span>
-          ) : (
-            <span>🏠 Daily</span>
-          )}
+        <span className="min-w-0 text-sm font-semibold text-stone-600">
+          <span className="block truncate">
+            {forLabel} · {emChi ? 'Em chi' : 'Anh chi'} · {dateLabel}
+          </span>
+          <span className="mt-0.5 block truncate">
+            {expenseType === 'trip' ? (
+              <span className="text-orange-600">
+                ✈️ {selectedTrip?.name ?? 'Trip'}
+                {tripAuto && <span className="ml-1.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold">auto</span>}
+              </span>
+            ) : (
+              <span>🏠 Daily</span>
+            )}
+          </span>
         </span>
         <span className="flex-shrink-0 text-sm font-bold text-pink-500">Edit</span>
       </button>
 
-      <div className="mb-3">
+      <div className="mb-4">
         <NumberPad onPress={handleKey} allowDecimal={isForeignCurrency} />
       </div>
 
@@ -528,7 +553,7 @@ export default function AddExpense() {
         categories={categories}
         rankedIds={rankedIds}
         selectedId={categoryId}
-        onSelect={setCategoryId}
+        onSelect={pickCategory}
       />
 
       <BottomSheet open={sheet === 'currency'} onClose={() => setSheet(null)} title="Currency">
