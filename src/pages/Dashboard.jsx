@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import { useHousehold } from '../context/HouseholdContext'
 import { useExpensesWithPending } from '../hooks/useExpensesWithPending'
+import { useSessionState } from '../hooks/useSessionState'
 import { daysBetweenInclusive, firstOfMonth, formatCurrency, monthRange, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 
@@ -87,8 +88,14 @@ export default function Dashboard() {
   const { household } = useHousehold()
   const today = toISODate(new Date())
   const monthOptions = buildMonthOptions(household?.budget_start_date)
-  const [selectedPeriod, setSelectedPeriod] = useState('so_far')
-  const [activeTab, setActiveTab] = useState('overall')
+  // Open on the current month (not the cumulative "Since …" view), and keep
+  // whatever was picked while moving between tabs. A stored month that is no
+  // longer in the list (e.g. before the start date) falls back to this month.
+  const currentMonth = firstOfMonth()
+  const [storedPeriod, setSelectedPeriod] = useSessionState('dualfin.dashboard.period', currentMonth)
+  const selectedPeriod = monthOptions.some((option) => option.value === storedPeriod) ? storedPeriod : currentMonth
+  const [storedTab, setActiveTab] = useSessionState('dualfin.dashboard.tab', 'overall')
+  const activeTab = ['overall', 'daily', 'trip'].includes(storedTab) ? storedTab : 'overall'
   const [selectedDay, setSelectedDay] = useState(null)
   const isSoFar = selectedPeriod === 'so_far'
   const [year, month] = isSoFar ? [new Date().getFullYear(), new Date().getMonth() + 1] : selectedPeriod.split('-').map(Number)
