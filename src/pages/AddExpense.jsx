@@ -447,14 +447,14 @@ export default function AddExpense() {
             </button>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {topPicks.map((c) => (
             <button
               key={c.id}
               type="button"
               onClick={() => pickCategory(c.id === categoryId ? '' : c.id)}
               aria-pressed={categoryId === c.id}
-              className={`max-w-full truncate rounded-full border px-3.5 py-2 text-sm font-semibold ${chipClass(categoryId === c.id)}`}
+              className={`shrink-0 whitespace-nowrap rounded-full border px-3.5 py-2 text-sm font-semibold ${chipClass(categoryId === c.id)}`}
             >
               {categoryIcon(c)} {c.name}
             </button>
