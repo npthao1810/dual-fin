@@ -46,10 +46,15 @@ export function HouseholdProvider({ children }) {
 
     if (householdError) {
       setLoading(false)
-      // Only block the UI on a real (non-network) error, and only when we
-      // have nothing cached to show instead.
-      if (!isNetworkError(householdError) && !hasLoadedRef.current) {
-        setError(householdError.message)
+      // With nothing cached to show, any failure must surface as an error —
+      // otherwise the page falls through to "no household" even though we
+      // simply never reached the server.
+      if (!hasLoadedRef.current) {
+        setError(
+          isNetworkError(householdError)
+            ? "Can't reach the server. Check your connection and try again."
+            : householdError.message
+        )
       }
       return
     }

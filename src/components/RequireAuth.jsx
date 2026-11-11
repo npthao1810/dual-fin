@@ -21,8 +21,15 @@ export default function RequireAuth({ children }) {
 
   if (error) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-orange-50 px-6 text-center text-rose-500">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-orange-50 px-6 text-center text-rose-500">
         {error}
+        <button
+          type="button"
+          onClick={() => refreshHousehold()}
+          className="rounded-full bg-pink-500 px-5 py-2 text-sm font-bold text-white"
+        >
+          Try again
+        </button>
       </div>
     )
   }
