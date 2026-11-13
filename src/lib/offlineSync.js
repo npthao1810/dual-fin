@@ -1,6 +1,6 @@
 import { getQueue, removeFromQueue, markQueueItemError } from './offlineQueue'
 import { runMutation } from './mutate'
-import { isNetworkError } from './network'
+import { isDuplicateInsert, isNetworkError } from './network'
 
 let syncing = false
 
@@ -14,6 +14,11 @@ export async function syncOfflineQueue() {
       try {
         const { error } = await runMutation(item)
         if (error) {
+          // Already saved by an earlier send — drop the leftover instead of flagging it.
+          if (isDuplicateInsert(error, item.op)) {
+            removeFromQueue(item.id)
+            continue
+          }
           if (isNetworkError(error)) continue
           markQueueItemError(item.id, error.message)
           continue
