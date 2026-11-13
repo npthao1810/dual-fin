@@ -15,11 +15,15 @@ const DIGITS = {
   'không': 0, 'một': 1, 'mốt': 1, hai: 2, ba: 3, 'bốn': 4, 'tư': 4, 'năm': 5, 'lăm': 5, 'sáu': 6, 'bảy': 7, 'tám': 8, 'chín': 9,
 }
 const UNITS = { 'nghìn': 1e3, 'ngàn': 1e3, k: 1e3, 'triệu': 1e6, tr: 1e6, m: 1e6, 'tỷ': 1e9, 'tỉ': 1e9 }
-const CURRENCY = new Set(['đ', 'đồng', 'vnd', '₫', 'd'])
+const CURRENCY = new Set(['đ', 'đồng', 'vnd', 'vnđ', '₫', 'd'])
+// Nothing a person spends comes anywhere near this; it guards against phone
+// numbers and runaway input.
+const MAX_AMOUNT = 1e11
 const MARKERS = new Set(['mười', 'mươi', 'trăm', 'chục', 'rưỡi', 'linh', 'lẻ'])
 
 // "65.000", "65,000" (thousands) vs "1,5" / "1.5" (decimal).
 function numericValue(token) {
+  if (/^0\d/.test(token)) return null
   if (/^\d{1,3}([.,]\d{3})+$/.test(token)) return Number(token.replace(/[.,]/g, ''))
   if (/^\d+([.,]\d+)?$/.test(token)) return Number(token.replace(',', '.'))
   return null
@@ -30,11 +34,12 @@ function numericValue(token) {
 function numberParts(raw) {
   const token = raw.toLowerCase().normalize('NFC')
   const bare = token.replace(/[.,;!?]+$/, '')
-  const noCur = bare.replace(/(?<=\d)(đ|d|₫|vnd)$/, '')
+  const noCur = bare.replace(/(?<=\d)(đ|d|₫|vnd|vnđ)$/, '')
   const glued = noCur.match(/^(\d+(?:[.,]\d+)?)(k|tr|m|ty)(\d+)?$/)
   if (glued) {
     const parts = [Number(glued[1].replace(',', '.')), glued[2]]
-    if (glued[3]) parts.push(Number(glued[3]))
+    // "1tr5", "12k5": the digits glued on are a tenth of the unit.
+    if (glued[3]) parts.push({ digit: Number(glued[3]) })
     return parts
   }
   const n = numericValue(noCur)
@@ -60,7 +65,9 @@ function evaluate(parts) {
       const v = typeof p === 'number' ? p : p.digit
       // "20" + "5" (hai mươi lăm) joins; a fresh digit otherwise replaces.
       cur = cur > 0 && cur % 10 === 0 && v < 10 && typeof p === 'object' ? cur + v : v
-      pendingTrailing = lastUnit > 0
+      // A word or glued digit after a unit is a fraction of it ("một triệu hai").
+      // A plain digit token only counts after triệu/tỷ: "65k 2 ly" is not 65,200.
+      pendingTrailing = typeof p === 'object' ? lastUnit > 0 : lastUnit >= 1e6
       afterHundred = false
       continue
     }
@@ -95,35 +102,54 @@ function evaluate(parts) {
   }
   let value = total + rest
   // Said with no unit at all ("hai trăm", "65"): Vietnamese shorthand for thousands.
-  if (!hasUnit && value > 0 && value < 1000) value *= 1000
-  return Math.round(value)
+  const bare = !hasUnit && value > 0 && value < 1000
+  if (bare) value *= 1000
+  return { value: Math.round(value), bare }
 }
 
-function findAmount(tokens) {
+// Tokens that may follow a unit-less amount: the payer/recipient words, or
+// currency/punctuation. Anything else means the number was part of the note.
+function onlyTrailingFiller(tokens, from, used) {
+  for (let k = from; k < tokens.length; k++) {
+    if (used.has(k)) continue
+    const parts = numberParts(tokens[k])
+    if (!(parts && parts.length === 1 && parts[0] === 'cur') && /[\p{L}\p{N}]/u.test(tokens[k])) return false
+  }
+  return true
+}
+
+function findAmount(tokens, used) {
   let best = null
   let i = 0
+  const partsAt = (k) => (used.has(k) ? null : numberParts(tokens[k]))
   while (i < tokens.length) {
-    const parts = numberParts(tokens[i])
-    if (!parts) {
+    if (!partsAt(i)) {
       i++
       continue
     }
     let j = i
     const run = []
     while (j < tokens.length) {
-      const pp = numberParts(tokens[j])
+      const pp = partsAt(j)
       if (!pp) break
+      // "65k 2 ly": a plain number right after k/nghìn starts something new.
+      const last = run[run.length - 1]
+      if (typeof pp[0] === 'number' && typeof last === 'string' && UNITS[last] < 1e6) break
       run.push(...pp)
       j++
     }
-    // A run made only of "đ"/marker words is not an amount.
-    const hasValue = run.some((p) => typeof p === 'number' || (p && typeof p === 'object'))
-    // A lone digit word ("ba", "nam", "hai") is far more likely a word in the
-    // note than an amount, so it only counts alongside a unit or another number.
-    const loneWord = run.length === 1 && typeof run[0] === 'object'
+    // "mười" alone has a value; the other markers ("trăm", "rưỡi", "đ") do not.
+    const hasValue = run.some((p) => typeof p === 'number' || p === 'mười' || (p && typeof p === 'object'))
+    // A lone number word ("ba", "nam", "hai", "mười") is far more likely a word
+    // in the note than an amount, so it only counts alongside a unit or a number.
+    const loneWord = run.length === 1 && (typeof run[0] === 'object' || run[0] === 'mười')
     if (hasValue && !loneWord) {
-      const value = evaluate(run)
-      if (value > 0 && (!best || value > best.value)) best = { start: i, end: j, value }
+      const { value, bare } = evaluate(run)
+      // "2 ly cafe": a unit-less small number is only an amount when it ends the text.
+      const accepted = !bare || onlyTrailingFiller(tokens, j, used)
+      if (accepted && value > 0 && value <= MAX_AMOUNT && (!best || value > best.value)) {
+        best = { start: i, end: j, value }
+      }
     }
     i = j
   }
@@ -137,7 +163,8 @@ const PAYER = [
 const FOR_WHOM = [
   [['cho', 'anh'], 'anh'], [['cua', 'anh'], 'anh'],
   [['cho', 'em'], 'em'], [['cua', 'em'], 'em'],
-  [['ca', 'hai'], 'us'], [['hai', 'dua'], 'us'], [['hai', 'vo', 'chong'], 'us'], [['chung'], 'us'],
+  [['cho', 'ca', 'hai'], 'us'], [['ca', 'hai'], 'us'], [['cho', 'hai', 'dua'], 'us'], [['hai', 'dua'], 'us'],
+  [['cho', 'hai', 'vo', 'chong'], 'us'], [['hai', 'vo', 'chong'], 'us'], [['chung'], 'us'],
 ]
 
 function matchAt(norm, pattern, i, used) {
@@ -167,15 +194,17 @@ export function parseSpokenExpense(text) {
   const used = new Set()
   const result = {}
 
-  const amount = findAmount(tokens)
-  if (amount) {
-    result.amount = amount.value
-    for (let k = amount.start; k < amount.end; k++) used.add(k)
-  }
+  // Payer / recipient first: "cả hai" and "hai đứa" contain the number word "hai".
   const emChi = extract(norm, PAYER, used)
   if (emChi !== undefined) result.emChi = emChi
   const forWhom = extract(norm, FOR_WHOM, used)
   if (forWhom !== undefined) result.forWhom = forWhom
+
+  const amount = findAmount(tokens, used)
+  if (amount) {
+    result.amount = amount.value
+    for (let k = amount.start; k < amount.end; k++) used.add(k)
+  }
 
   const note = tokens.filter((_, i) => !used.has(i)).join(' ').replace(/^[\s,.\-–]+|[\s,.\-–]+$/g, '')
   result.note = note.charAt(0).toUpperCase() + note.slice(1)
