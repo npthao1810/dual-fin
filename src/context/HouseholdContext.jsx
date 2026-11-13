@@ -27,7 +27,9 @@ export function HouseholdProvider({ children }) {
 
     if (!hasLoadedRef.current) {
       const cached = readCache(key)
-      if (cached) {
+      // Only a real household counts as "already loaded". A cached null would
+      // flash the "no household" screen until the network answer arrives.
+      if (cached?.household) {
         setHousehold(cached.household)
         setCategories(cached.categories ?? [])
         setLoading(false)
@@ -73,7 +75,8 @@ export function HouseholdProvider({ children }) {
     setCategories(categoryData)
     setLoading(false)
     hasLoadedRef.current = true
-    writeCache(key, { household: householdData, categories: categoryData })
+    // Never cache "no household" — see the cache read above.
+    if (householdData) writeCache(key, { household: householdData, categories: categoryData })
   }, [user])
 
   useEffect(() => {
