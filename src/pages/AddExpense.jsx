@@ -505,24 +505,32 @@ export default function AddExpense() {
       <button
         type="button"
         onClick={() => setSheet('details')}
+        aria-label="Edit who paid, who it is for, date and trip"
         className="mb-5 flex w-full items-center justify-between gap-3 rounded-2xl border border-pink-100 bg-white px-4 py-3 text-left shadow-sm shadow-pink-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
       >
-        <span className="min-w-0 text-sm font-semibold text-stone-600">
-          <span className="block truncate">
-            {forLabel} · {emChi ? 'Em chi' : 'Anh chi'} · {dateLabel}
-          </span>
-          <span className="mt-0.5 block truncate">
-            {expenseType === 'trip' ? (
-              <span className="text-orange-600">
-                ✈️ {selectedTrip?.name ?? 'Trip'}
-                {tripAuto && <span className="ml-1.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold">auto</span>}
-              </span>
-            ) : (
-              <span>🏠 Daily</span>
-            )}
-          </span>
+        <span className="block min-w-0 truncate text-sm font-semibold text-stone-600">
+          {forLabel} · {emChi ? 'Em chi' : 'Anh chi'} · {dateLabel} ·{' '}
+          {expenseType === 'trip' ? (
+            <span className="text-orange-600">
+              ✈️ {selectedTrip?.name ?? 'Trip'}
+              {tripAuto && <span className="ml-1.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold">auto</span>}
+            </span>
+          ) : (
+            <span>🏠 Daily</span>
+          )}
         </span>
-        <span className="flex-shrink-0 text-sm font-bold text-pink-500">Edit</span>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          className="h-4 w-4 flex-shrink-0 text-pink-500"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M13.5 3.5l3 3L7 16l-4 1 1-4 9.5-9.5z" />
+        </svg>
       </button>
 
       <div className="mb-4">
