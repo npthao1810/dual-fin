@@ -35,6 +35,77 @@ function FilterIcon() {
   )
 }
 
+function ExpenseRow({ e }) {
+                const content = (
+                  <>
+                    <div>
+                      <p className="font-semibold text-stone-700">
+                        {categoryIcon(e.categories)} {e.note}
+                      </p>
+                      <p className="flex items-center gap-1 text-xs font-semibold text-stone-400">
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                          (e.expense_type ?? (e.trip_id ? 'trip' : 'daily')) === 'trip'
+                            ? 'bg-orange-100 text-orange-600'
+                            : 'bg-pink-100 text-pink-600'
+                        }`}>
+                          {(e.expense_type ?? (e.trip_id ? 'trip' : 'daily')) === 'trip' ? 'Trip' : 'Daily'}
+                        </span>
+                        {e.categories?.name ?? 'Uncategorized'} ·
+                        {FOR_ICONS[e.for_whom] && (
+                          <img src={FOR_ICONS[e.for_whom]} alt="" className="h-4 w-4" />
+                        )}
+                        {e.for_whom} · {e.em_chi ? 'Em chi' : 'Anh chi'}
+                      </p>
+                      {e.pending && e.status === 'pending' && (
+                        <p className="mt-1 text-xs font-bold text-amber-500">🔄 Pending sync</p>
+                      )}
+                      {e.pending && e.status === 'error' && (
+                        <p className="mt-1 text-xs font-bold text-rose-500">⚠️ Couldn't sync: {e.errorMessage}</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-stone-800">{formatCurrency(e.amount)}</span>
+                      {e.currency && (
+                        <p className="text-xs font-semibold text-stone-400">
+                          {formatForeign(e.original_amount, e.currency)}
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )
+
+                if (e.pending) {
+                  return (
+                    <li
+                      key={e.id}
+                      className="flex items-center gap-2 rounded-2xl border border-dashed border-amber-200 bg-white/70 p-3 opacity-80"
+                    >
+                      <div className="flex flex-1 items-center justify-between">{content}</div>
+                      {e.status === 'error' && (
+                        <button
+                          type="button"
+                          onClick={() => removeFromQueue(e.queueId ?? e.id)}
+                          className="text-xs font-bold text-stone-400"
+                        >
+                          Discard
+                        </button>
+                      )}
+                    </li>
+                  )
+                }
+
+                return (
+                  <li key={e.id}>
+                    <Link
+                      to={`/edit/${e.id}`}
+                      className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
+                    >
+                      {content}
+                    </Link>
+                  </li>
+                )
+}
+
 export default function History() {
   const { expenses, loading } = useExpensesWithPending()
   const { household } = useHousehold()
@@ -80,6 +151,10 @@ export default function History() {
     day.items.push(e)
     byDay.set(e.date, day)
   }
+
+  const isSearching = search.trim() !== '' || activeFilterCount > 0
+  const resultDays = [...byDay.entries()].sort(([x], [y]) => (x < y ? 1 : -1))
+  const resultTotal = filtered.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
 
   const today = toISODate(new Date())
   const [cursor, setCursor] = useState(() => ({ y: new Date().getFullYear(), m: new Date().getMonth() + 1 }))
@@ -146,7 +221,11 @@ export default function History() {
         <button
           type="button"
           aria-label="Search"
-          onClick={() => setSearchOpen((v) => !v)}
+          onClick={() => {
+            // Closing the box also drops the text, so results never stay filtered by something you can't see.
+            if (searchOpen) setSearch('')
+            setSearchOpen((v) => !v)
+          }}
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
             searchOpen ? 'border-pink-500 bg-pink-500 text-white' : 'border-pink-200 bg-white text-stone-500'
           }`}
@@ -238,6 +317,8 @@ export default function History() {
         </div>
       )}
 
+      {!isSearching && (
+        <>
       <div className="mb-3 rounded-3xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50">
         <div className="mb-2 flex items-center justify-between">
           <button
@@ -306,12 +387,15 @@ export default function History() {
         </p>
       </div>
 
+        </>
+      )}
+
       {loading && <p className="text-sm text-stone-400">Loading…</p>}
       {!loading && expenses.length === 0 && <p className="text-sm text-stone-400">No expenses recorded yet.</p>}
       {!loading && expenses.length > 0 && filtered.length === 0 && (
         <p className="text-sm text-stone-400">No expenses match your search/filters.</p>
       )}
-      {selectedDay && (
+      {!isSearching && selectedDay && (
         <div>
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold text-stone-500">
@@ -324,78 +408,36 @@ export default function History() {
           {!selected && !loading && <p className="text-sm text-stone-400">Nothing spent this day.</p>}
           {selected && (
             <ul className="space-y-2">
-              {selected.items.map((e) => {
-                const content = (
-                  <>
-                    <div>
-                      <p className="font-semibold text-stone-700">
-                        {categoryIcon(e.categories)} {e.note}
-                      </p>
-                      <p className="flex items-center gap-1 text-xs font-semibold text-stone-400">
-                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                          (e.expense_type ?? (e.trip_id ? 'trip' : 'daily')) === 'trip'
-                            ? 'bg-orange-100 text-orange-600'
-                            : 'bg-pink-100 text-pink-600'
-                        }`}>
-                          {(e.expense_type ?? (e.trip_id ? 'trip' : 'daily')) === 'trip' ? 'Trip' : 'Daily'}
-                        </span>
-                        {e.categories?.name ?? 'Uncategorized'} ·
-                        {FOR_ICONS[e.for_whom] && (
-                          <img src={FOR_ICONS[e.for_whom]} alt="" className="h-4 w-4" />
-                        )}
-                        {e.for_whom} · {e.em_chi ? 'Em chi' : 'Anh chi'}
-                      </p>
-                      {e.pending && e.status === 'pending' && (
-                        <p className="mt-1 text-xs font-bold text-amber-500">🔄 Pending sync</p>
-                      )}
-                      {e.pending && e.status === 'error' && (
-                        <p className="mt-1 text-xs font-bold text-rose-500">⚠️ Couldn't sync: {e.errorMessage}</p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <span className="font-bold text-stone-800">{formatCurrency(e.amount)}</span>
-                      {e.currency && (
-                        <p className="text-xs font-semibold text-stone-400">
-                          {formatForeign(e.original_amount, e.currency)}
-                        </p>
-                      )}
-                    </div>
-                  </>
-                )
-
-                if (e.pending) {
-                  return (
-                    <li
-                      key={e.id}
-                      className="flex items-center gap-2 rounded-2xl border border-dashed border-amber-200 bg-white/70 p-3 opacity-80"
-                    >
-                      <div className="flex flex-1 items-center justify-between">{content}</div>
-                      {e.status === 'error' && (
-                        <button
-                          type="button"
-                          onClick={() => removeFromQueue(e.queueId ?? e.id)}
-                          className="text-xs font-bold text-stone-400"
-                        >
-                          Discard
-                        </button>
-                      )}
-                    </li>
-                  )
-                }
-
-                return (
-                  <li key={e.id}>
-                    <Link
-                      to={`/edit/${e.id}`}
-                      className="flex items-center justify-between rounded-2xl border border-pink-100 bg-white p-3 shadow-sm shadow-pink-50"
-                    >
-                      {content}
-                    </Link>
-                  </li>
-                )
-              })}
+              {selected.items.map((e) => (
+                <ExpenseRow key={e.id} e={e} />
+              ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {isSearching && filtered.length > 0 && (
+        <div>
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold text-stone-500">
+              {filtered.length} match{filtered.length === 1 ? '' : 'es'}
+            </h2>
+            <span className="text-sm font-bold text-stone-700">{formatCurrency(resultTotal)}</span>
+          </div>
+          <div className="space-y-4">
+            {resultDays.map(([date, day]) => (
+              <div key={date}>
+                <h3 className="mb-2 text-xs font-semibold text-stone-400">
+                  {new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                </h3>
+                <ul className="space-y-2">
+                  {day.items.map((e) => (
+                    <ExpenseRow key={e.id} e={e} />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </Layout>
