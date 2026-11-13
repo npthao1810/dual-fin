@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Whisper spike</title>
+<style>
+  body { font: 16px/1.4 system-ui, sans-serif; margin: 0; padding: 16px; background: #fff7ed; color: #292524; max-width: 560px; margin-inline: auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.hint { margin: 0 0 14px; font-size: 13px; color: #78716c; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+  select, button { font: inherit; padding: 12px; border-radius: 12px; border: 1px solid #fbcfe8; background: #fff; width: 100%; box-sizing: border-box; }
+  button.primary { background: #ec4899; color: #fff; border: 0; font-weight: 700; margin-top: 12px; }
+  button.rec { background: #dc2626; }
+  button:disabled { opacity: .5; }
+  pre { white-space: pre-wrap; background: #fff; border: 1px solid #fbcfe8; border-radius: 12px; padding: 12px; font-size: 13px; margin: 12px 0 0; }
+  #text { font-size: 20px; font-weight: 600; min-height: 1.4em; }
+  progress { width: 100%; }
+</style>
+</head>
+<body>
+<h1>Whisper in-browser spike</h1>
+<p class="hint">Runs entirely on this device. The model downloads once from Hugging Face, then everything (audio included) stays local.</p>
+
+<label for="model">Model (bigger = better Vietnamese, slower)</label>
+<select id="model">
+  <option value="onnx-community/whisper-tiny">tiny (~40 MB)</option>
+  <option value="onnx-community/whisper-base" selected>base (~75 MB)</option>
+  <option value="onnx-community/whisper-small">small (~250 MB)</option>
+</select>
+
+<label for="device">Backend</label>
+<select id="device">
+  <option value="wasm" selected>wasm (works everywhere)</option>
+  <option value="webgpu">webgpu (faster, if supported)</option>
+</select>
+
+<label for="lang">Language</label>
+<select id="lang">
+  <option value="vi" selected>Vietnamese</option>
+  <option value="en">English</option>
+  <option value="">Auto-detect</option>
+</select>
+
+<button class="primary" id="load">1. Load model</button>
+<progress id="prog" value="0" max="100" hidden></progress>
+<button class="primary" id="rec" disabled>2. Tap to record, tap again to stop</button>
+
+<pre id="text">…</pre>
+<pre id="log"></pre>
+
+<script type="module">
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5/+esm'
+
+env.allowLocalModels = false
+const $ = (id) => document.getElementById(id)
+const log = (s) => { $('log').textContent += s + '\n' }
+let asr = null
+let loadedKey = null
+
+log(`UA: ${navigator.userAgent}`)
+log(`WebGPU available: ${'gpu' in navigator}`)
+log(`Secure context: ${isSecureContext}`)
+
+$('load').onclick = async () => {
+  const model = $('model').value
+  const device = $('device').value
+  $('load').disabled = true
+  $('prog').hidden = false
+  const files = {}
+  const t0 = performance.now()
+  try {
+    asr = await pipeline('automatic-speech-recognition', model, {
+      device,
+      dtype: device === 'webgpu' ? { encoder_model: 'fp32', decoder_model_merged: 'q4' } : 'q8',
+      progress_callback: (p) => {
+        if (p.status === 'progress' && p.file) {
+          files[p.file] = { loaded: p.loaded, total: p.total }
+          const all = Object.values(files)
+          const loaded = all.reduce((a, f) => a + f.loaded, 0)
+          const total = all.reduce((a, f) => a + f.total, 0)
+          $('prog').value = total ? (100 * loaded) / total : 0
+        }
+      },
+    })
+    loadedKey = `${model} / ${device}`
+    log(`Loaded ${loadedKey} in ${((performance.now() - t0) / 1000).toFixed(1)}s`)
+    $('rec').disabled = false
+  } catch (e) {
+    log(`LOAD FAILED: ${e.message || e}`)
+  }
+  $('load').disabled = false
+  $('prog').hidden = true
+}
+
+window.spike = { get asr() { return asr }, toMono16k: (b) => toMono16k(b) }
+
+let recorder = null
+let chunks = []
+let stream = null
+
+async function toMono16k(blob) {
+  const buf = await blob.arrayBuffer()
+  const ctx = new (window.AudioContext || window.webkitAudioContext)()
+  const decoded = await ctx.decodeAudioData(buf)
+  ctx.close()
+  const length = Math.ceil(decoded.duration * 16000)
+  const off = new OfflineAudioContext(1, length, 16000)
+  const src = off.createBufferSource()
+  src.buffer = decoded
+  src.connect(off.destination)
+  src.start()
+  const rendered = await off.startRendering()
+  return { audio: rendered.getChannelData(0), seconds: decoded.duration }
+}
+
+$('rec').onclick = async () => {
+  if (recorder && recorder.state === 'recording') {
+    recorder.stop()
+    return
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+  } catch (e) {
+    log(`MIC FAILED: ${e.message || e}`)
+    return
+  }
+  chunks = []
+  recorder = new MediaRecorder(stream)
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data)
+  recorder.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop())
+    $('rec').classList.remove('rec')
+    $('rec').textContent = '2. Tap to record, tap again to stop'
+    $('text').textContent = 'Transcribing…'
+    try {
+      const { audio, seconds } = await toMono16k(new Blob(chunks, { type: recorder.mimeType }))
+      const t0 = performance.now()
+      const lang = $('lang').value
+      const out = await asr(audio, { ...(lang ? { language: lang, task: 'transcribe' } : {}), chunk_length_s: 30 })
+      const ms = performance.now() - t0
+      $('text').textContent = out.text.trim() || '(empty)'
+      log(`audio ${seconds.toFixed(1)}s → ${(ms / 1000).toFixed(1)}s to transcribe (${loadedKey}, lang=${lang || 'auto'})`)
+    } catch (e) {
+      $('text').textContent = '(error)'
+      log(`TRANSCRIBE FAILED: ${e.message || e}`)
+    }
+  }
+  recorder.start()
+  $('rec').classList.add('rec')
+  $('rec').textContent = '■ Recording… tap to stop'
+}
+</script>
+</body>
+</html>
