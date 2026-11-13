@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext'
 import { currencySymbol, formatCurrency, toISODate } from '../lib/format'
 import { categoryIcon } from '../lib/categoryIcons'
 import { rankCategoryIds, suggestCategoryId } from '../lib/categoryStats'
+import { parseSpokenExpense } from '../lib/parseSpoken'
 import { mutateOrQueue } from '../lib/mutate'
 import { getQueue } from '../lib/offlineQueue'
 import { readCache, writeCache } from '../lib/localCache'
@@ -289,6 +290,18 @@ export default function AddExpense() {
 
   const activeCurrency = currency.trim().toUpperCase() || 'VND'
   const isForeignCurrency = activeCurrency !== 'VND'
+
+  // Dictated or typed "cafe 65k anh trả": offer to fill amount, payer and
+  // whom it was for. Only while the amount is still empty and in VND, so it
+  // never fights with numbers typed on the pad.
+  const spoken = useMemo(() => parseSpokenExpense(name), [name])
+  const canApplySpoken = !isEditing && amount === '' && !isForeignCurrency && spoken.amount > 0
+  function applySpoken() {
+    setAmount(String(spoken.amount))
+    setName(spoken.note)
+    if (spoken.emChi !== undefined) setEmChi(spoken.emChi)
+    if (spoken.forWhom) setForWhom(spoken.forWhom)
+  }
   const activeRate = Number(exchangeRate) || null
   const calculatedVnd = isForeignCurrency && activeRate && amount ? Math.round(Number(amount) * activeRate) : null
   const vndPreview = chargedVnd ? Number(chargedVnd) : calculatedVnd
@@ -436,6 +449,18 @@ export default function AddExpense() {
           placeholder="What was it? e.g. Groceries"
           className="w-full rounded-2xl border border-pink-200 bg-white px-4 py-3 text-base text-stone-700 placeholder:text-stone-300"
         />
+        {canApplySpoken && (
+          <button
+            type="button"
+            onClick={applySpoken}
+            className="mt-2 rounded-full border border-pink-200 bg-pink-50 px-3 py-1.5 text-sm font-semibold text-pink-600"
+          >
+            ✨ {formatCurrency(spoken.amount)}
+            {spoken.emChi !== undefined ? ` · ${spoken.emChi ? 'Em chi' : 'Anh chi'}` : ''}
+            {spoken.forWhom ? ` · ${FOR_OPTIONS.find((o) => o.value === spoken.forWhom)?.label}` : ''}
+            {' '}— tap to fill
+          </button>
+        )}
       </div>
 
       <div className="mb-5">
