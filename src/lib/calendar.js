@@ -22,10 +22,10 @@ export function monthGrid(year, month) {
   return cells
 }
 
-/** 'ok' | 'near' | 'over' | 'none' for a day's spend against a per-day limit. */
+/** 'none' | 'neutral' (no limit set) | 'ok' | 'near' | 'over' for a day's spend against a per-day limit. */
 export function dayLevel(spent, limit) {
   if (!spent) return 'none'
-  if (!limit) return 'ok'
+  if (!limit) return 'neutral'
   const ratio = spent / limit
   if (ratio > 1) return 'over'
   if (ratio >= 0.8) return 'near'
