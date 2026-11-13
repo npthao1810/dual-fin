@@ -54,6 +54,17 @@ export function markQueueItemError(id, message) {
   )
 }
 
+/** Put errored items back in line for the next sync pass. Pass an id for one item, or nothing for all of them. */
+export function retryQueueItems(id = null) {
+  setQueue(
+    getQueue().map((item) =>
+      item.status === 'error' && (id == null || item.id === id)
+        ? { ...item, status: 'pending', errorMessage: null }
+        : item
+    )
+  )
+}
+
 export function subscribeToQueue(callback) {
   window.addEventListener(QUEUE_EVENT, callback)
   window.addEventListener('storage', callback)
