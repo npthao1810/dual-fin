@@ -12,18 +12,27 @@ function cacheKeyFor(userId) {
 
 export function HouseholdProvider({ children }) {
   const { user } = useAuth()
-  const [household, setHousehold] = useState(null)
-  const [categories, setCategories] = useState([])
-  const [loading, setLoading] = useState(true)
+  // Token refreshes hand out a new user object for the same person — only a
+  // different id should restart the household load.
+  const userId = user?.id
+  // Start from the cached household so the very first render is already real —
+  // no loader frame while an effect catches up. Only a real household counts.
+  const [initial] = useState(() => {
+    const cached = userId ? readCache(cacheKeyFor(userId)) : null
+    return cached?.household ? cached : null
+  })
+  const [household, setHousehold] = useState(initial?.household ?? null)
+  const [categories, setCategories] = useState(initial?.categories ?? [])
+  const [loading, setLoading] = useState(!initial)
   const [error, setError] = useState(null)
   // Tracks whether *this* user already has real data on screen, so a
   // background revalidation never yanks the UI back to a spinner or an
   // error page — it just quietly succeeds or quietly fails.
-  const hasLoadedRef = useRef(false)
+  const hasLoadedRef = useRef(!!initial)
 
   const fetchHousehold = useCallback(async () => {
-    if (!user) return
-    const key = cacheKeyFor(user.id)
+    if (!userId) return
+    const key = cacheKeyFor(userId)
 
     if (!hasLoadedRef.current) {
       const cached = readCache(key)
@@ -43,7 +52,7 @@ export function HouseholdProvider({ children }) {
     const { data: householdData, error: householdError } = await supabase
       .from('households')
       .select('*')
-      .or(`member_1_id.eq.${user.id},member_2_id.eq.${user.id}`)
+      .or(`member_1_id.eq.${userId},member_2_id.eq.${userId}`)
       .maybeSingle()
 
     if (householdError) {
@@ -77,11 +86,11 @@ export function HouseholdProvider({ children }) {
     hasLoadedRef.current = true
     // Never cache "no household" — see the cache read above.
     if (householdData) writeCache(key, { household: householdData, categories: categoryData })
-  }, [user])
+  }, [userId])
 
   useEffect(() => {
     hasLoadedRef.current = false
-    if (!user) {
+    if (!userId) {
       setHousehold(null)
       setCategories([])
       setError(null)
@@ -89,7 +98,7 @@ export function HouseholdProvider({ children }) {
       return
     }
     fetchHousehold()
-  }, [user, fetchHousehold])
+  }, [userId, fetchHousehold])
 
   const value = {
     household,
