@@ -3,9 +3,27 @@ import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
+/**
+ * The session supabase-js persisted last time, read synchronously. Lets the app
+ * start as "signed in" immediately instead of waiting on the library — which,
+ * when the access token has expired, first does a network refresh. The real
+ * session still arrives via onAuthStateChange and replaces (or clears) this.
+ */
+function readStoredSession() {
+  try {
+    const ref = new URL(import.meta.env.VITE_SUPABASE_URL).hostname.split('.')[0]
+    const raw = localStorage.getItem(`sb-${ref}-auth-token`)
+    const stored = raw ? JSON.parse(raw) : null
+    return stored?.user?.id && stored?.refresh_token ? stored : null
+  } catch {
+    return null
+  }
+}
+
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [session, setSession] = useState(readStoredSession)
+  // With a stored session there's nothing to wait for — render from cache now.
+  const [loading, setLoading] = useState(() => !readStoredSession())
 
   useEffect(() => {
     // onAuthStateChange fires an INITIAL_SESSION event as soon as it resolves
