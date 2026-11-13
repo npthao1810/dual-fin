@@ -159,6 +159,8 @@ function findAmount(tokens, used) {
 const PAYER = [
   [['em', 'tra'], true], [['em', 'chi'], true], [['em', 'thanh', 'toan'], true],
   [['anh', 'tra'], false], [['anh', 'chi'], false], [['anh', 'thanh', 'toan'], false],
+  // "trà sữa anh mua": the one who bought it paid for it.
+  [['em', 'mua'], true], [['anh', 'mua'], false],
 ]
 const FOR_WHOM = [
   [['cho', 'anh'], 'anh'], [['cua', 'anh'], 'anh'],
