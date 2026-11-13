@@ -219,13 +219,20 @@ export default function AddExpense() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoTrip, tripOverride, tripAuto, tripId, isEditing, presetTripId])
 
+  // What a fresh form starts on: your most-used category, else Food.
+  function defaultCategoryId() {
+    const topId = rankedIds.find((rid) => categories.some((c) => c.id === rid))
+    const food = categories.find((c) => c.name.trim().toLowerCase() === 'food')
+    return topId ?? food?.id ?? ''
+  }
+
   useEffect(() => {
     if (didSetDefaultCategory.current || categories.length === 0 || !statsReady) return
     didSetDefaultCategory.current = true
-    const topId = rankedIds.find((rid) => categories.some((c) => c.id === rid))
-    const food = categories.find((c) => c.name.trim().toLowerCase() === 'food')
-    const pick = topId ?? food?.id
+    const pick = defaultCategoryId()
     if (pick) setCategoryId(pick)
+    // defaultCategoryId only reads categories and rankedIds, both listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categories, rankedIds, statsReady])
 
   useEffect(() => {
@@ -311,6 +318,43 @@ export default function AddExpense() {
     return { today: toISODate(now), yesterday: toISODate(new Date(now.getTime() - 24 * 60 * 60 * 1000)) }
   }, [])
   const dateBadge = date === today ? 'Today' : date === yesterday ? 'Yesterday' : null
+
+  // Anything changed from a fresh form? Drives the Reset button.
+  const isDirty =
+    !isEditing &&
+    (amount !== '' ||
+      name.trim() !== '' ||
+      categoryTouched ||
+      forWhom !== 'us' ||
+      emChi ||
+      tripOverride ||
+      date !== today ||
+      (currency !== 'VND' && !currencyFromTrip))
+
+  // Back to what opening Add fresh shows (a trip picked by date is re-applied
+  // by the effect above, just like on a fresh open).
+  function resetForm() {
+    setAmount('')
+    setName('')
+    setCategoryId(defaultCategoryId())
+    setCategoryTouched(false)
+    setCategoryAuto(false)
+    setForWhom('us')
+    setEmChi(false)
+    setTripId(presetTripId)
+    setExpenseType(presetTripId ? 'trip' : 'daily')
+    setTripAuto(false)
+    setTripOverride(false)
+    setCurrency('VND')
+    setCurrencyFromTrip(false)
+    setExchangeRate('')
+    setChargedVnd('')
+    setDate(toISODate(new Date()))
+    setError(null)
+    setSheet(null)
+    didSetDefaultCategory.current = true
+    clearDraft()
+  }
   const dateLabel = useMemo(() => {
     if (dateBadge) return dateBadge
     const [y, m, d] = date.split('-').map(Number)
@@ -414,7 +458,21 @@ export default function AddExpense() {
 
   return (
     <Layout title={isEditing ? 'Edit expense' : 'Add expense'}>
-      <div className="mb-5 mt-1 text-center">
+      <div className="relative mb-5 mt-1 text-center">
+        {isDirty && (
+          <button
+            type="button"
+            onClick={resetForm}
+            aria-label="Reset the form to empty"
+            className="absolute right-0 top-0 flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-stone-400 active:text-pink-500"
+          >
+            <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 10a6 6 0 1 0 2-4.5" />
+              <path d="M4 3.5V6.5h3" />
+            </svg>
+            Reset
+          </button>
+        )}
         <div className="flex items-center justify-center gap-3">
           <span className="text-5xl font-bold tabular-nums text-stone-800">{displayAmount}</span>
           <button
