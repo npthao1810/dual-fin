@@ -192,7 +192,6 @@ export default function History() {
   }
 
   const dailyRate = Number(household?.daily_household_limit) || 0
-  const tripRate = Number(household?.daily_trip_limit) || 0
   const tripDays = useMemo(() => {
     const set = new Set()
     for (const t of trips) {
@@ -208,9 +207,11 @@ export default function History() {
 
   const LEVEL_CLASS = {
     none: 'bg-white text-stone-300',
-    ok: 'bg-pink-50 text-stone-700',
-    near: 'bg-amber-100 text-amber-800',
-    over: 'bg-rose-100 text-rose-600',
+    neutral: 'bg-stone-100 text-stone-700',
+    ok: 'bg-emerald-100 text-emerald-800',
+    near: 'bg-amber-200 text-amber-900',
+    over: 'bg-red-200 text-red-800',
+    trip: 'bg-sky-100 text-sky-800',
   }
 
   return (
@@ -355,9 +356,8 @@ export default function History() {
             if (!date) return <span key={i} />
             const day = byDay.get(date)
             const total = day ? day.daily + day.trip : 0
-            const level = dayLevel(day?.daily ?? 0, dailyRate)
-            const tripLevel = day?.trip && !day?.daily ? dayLevel(day.trip, tripRate) : 'none'
-            const cellLevel = level !== 'none' ? level : tripLevel
+            // Colour is the daily limit only. A day with nothing but trip spending is blue, not judged against it.
+            const cellLevel = day?.daily ? dayLevel(day.daily, dailyRate) : day?.trip ? 'trip' : 'none'
             const isSel = date === selectedDay
             return (
               <button
@@ -367,23 +367,24 @@ export default function History() {
                 aria-label={date}
                 aria-pressed={isSel}
                 className={`relative flex h-12 flex-col items-center justify-center rounded-xl text-[11px] font-semibold leading-tight ${LEVEL_CLASS[cellLevel]} ${
-                  isSel ? 'ring-2 ring-pink-500' : ''
+                  isSel ? 'ring-2 ring-stone-800' : ''
                 } ${date === today && !isSel ? 'ring-1 ring-stone-300' : ''}`}
               >
                 <span className="text-xs font-bold">{Number(date.slice(8))}</span>
                 <span className="text-[10px]">{total ? compactAmount(total) : ''}</span>
                 {tripDays.has(date) && (
-                  <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-orange-400" />
+                  <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-sky-500" />
                 )}
               </button>
             )
           })}
         </div>
         <p className="mt-2 flex flex-wrap items-center justify-center gap-x-3 text-[10px] font-semibold text-stone-400">
-          <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-pink-200" />within limit</span>
-          <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-300" />near</span>
-          <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-rose-300" />over</span>
-          <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-orange-400" />trip day</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-300" />within</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-300" />near limit</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-300" />over</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-sky-300" />trip only</span>
+          <span><span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-sky-500" />trip day</span>
         </p>
       </div>
 
